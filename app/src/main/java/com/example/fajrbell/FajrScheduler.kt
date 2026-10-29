@@ -13,29 +13,30 @@ import java.util.Date
 
 object FajrScheduler {
 
-    // ===== عدّل الإعدادات دي =====
-    const val LATITUDE = 30.0444      // خط العرض (القاهرة/الجيزة تقريباً)
-    const val LONGITUDE = 31.2357     // خط الطول
-    const val MINUTES_BEFORE = 0      // رنّ قبل الفجر بكام دقيقة (0 = وقت الفجر بالظبط)
-    // ==============================
+    // ===== عدّل مكانك هنا =====
+    const val LATITUDE = 30.0444
+    const val LONGITUDE = 31.2357
+    // ==========================
 
-    /** أقرب فجر جاي (النهارده لو لسه ماجاش، وإلا بكرة) بطريقة الهيئة المصرية */
-    fun nextFajr(): Date {
+    class Next(val fajr: Date, val ring: Date)
+
+    /** أقرب رنة جاية: وقت الفجر المحسوب + وقت الرنين بعد التعديل */
+    fun next(context: Context): Next {
         val coords = Coordinates(LATITUDE, LONGITUDE)
         val params = CalculationMethod.EGYPTIAN.parameters
-        for (dayOffset in 0..2) {
+        val offsetMs = Prefs.offset(context) * 60_000L
+        for (dayOffset in 0..3) {
             val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
-            val times = PrayerTimes(coords, DateComponents.from(cal.time), params)
-            val ringAt = times.fajr.time - MINUTES_BEFORE * 60_000L
-            if (ringAt > System.currentTimeMillis()) return Date(ringAt)
+            val fajr = PrayerTimes(coords, DateComponents.from(cal.time), params).fajr
+            val ring = fajr.time + offsetMs
+            if (ring > System.currentTimeMillis()) return Next(fajr, Date(ring))
         }
         error("no upcoming fajr found")
     }
 
-    /** بيجدول المنبه الجاي. بيتنادى كل ما المنبه يرن وبعد إعادة التشغيل */
     fun schedule(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
-        val trigger = nextFajr().time
+        val trigger = next(context).ring.time
 
         val ringIntent = PendingIntent.getBroadcast(
             context, 1, Intent(context, AlarmReceiver::class.java),
@@ -45,7 +46,15 @@ object FajrScheduler {
             context, 2, Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE
         )
-        // setAlarmClock: أدق نوع منبه، بيشتغل حتى في Doze وما بيحتاش إذن Exact Alarm
         am.setAlarmClock(AlarmManager.AlarmClockInfo(trigger, showIntent), ringIntent)
+    }
+
+    fun cancel(context: Context) {
+        val am = context.getSystemService(AlarmManager::class.java)
+        val ringIntent = PendingIntent.getBroadcast(
+            context, 1, Intent(context, AlarmReceiver::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        am.cancel(ringIntent)
     }
 }

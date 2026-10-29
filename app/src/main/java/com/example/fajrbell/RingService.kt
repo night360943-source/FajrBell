@@ -53,30 +53,45 @@ class RingService : Service() {
         }
 
         startSound()
-        handler.postDelayed({ stopSelf() }, 60_000) // يقف لوحده بعد دقيقة
+        handler.removeCallbacksAndMessages(null)
+        handler.postDelayed({ stopSelf() }, Prefs.duration(this) * 1000L)
         return START_NOT_STICKY
     }
 
-    private fun startSound() {
-        player?.release()
-        // لو حطيت ملف bell.mp3 في res/raw هيشتغل، وإلا نغمة المنبه الافتراضية
-        val resId = resources.getIdentifier("bell", "raw", packageName)
-        val uri: Uri = if (resId != 0)
-            Uri.parse("android.resource://$packageName/$resId")
-        else
-            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-
-        player = MediaPlayer().apply {
-            setAudioAttributes(
+    private fun buildPlayer(uri: Uri): MediaPlayer {
+        val mp = MediaPlayer()
+        try {
+            mp.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_ALARM)
                     .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
                     .build()
             )
-            setDataSource(this@RingService, uri)
-            isLooping = true
-            prepare()
-            start()
+            mp.setDataSource(this, uri)
+            mp.isLooping = true
+            mp.prepare()
+            mp.start()
+            return mp
+        } catch (e: Exception) {
+            mp.release()
+            throw e
+        }
+    }
+
+    private fun startSound() {
+        player?.release()
+        player = null
+        val saved = Prefs.sound(this)?.let { Uri.parse(it) }
+        val resId = resources.getIdentifier("bell", "raw", packageName)
+        val raw = if (resId != 0) Uri.parse("android.resource://$packageName/$resId") else null
+        val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+
+        // الأولوية: النغمة اللي اخترتها > bell.mp3 > نغمة المنبه الافتراضية
+        for (uri in listOfNotNull(saved, raw, fallback)) {
+            try {
+                player = buildPlayer(uri)
+                return
+            } catch (_: Exception) { }
         }
     }
 
