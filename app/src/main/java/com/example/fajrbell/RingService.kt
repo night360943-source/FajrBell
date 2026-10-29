@@ -28,10 +28,12 @@ class RingService : Service() {
             return START_NOT_STICKY
         }
 
+        val prayerName = intent?.getStringExtra("prayer")
+        val title = if (prayerName != null) "حان الآن موعد صلاة $prayerName" else "تجربة الجرس"
         val channelId = "fajr_bell"
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(channelId, "جرس الفجر", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel(channelId, "جرس الصلاة", NotificationManager.IMPORTANCE_HIGH)
         )
         val stopPi = PendingIntent.getService(
             this, 3, Intent(this, RingService::class.java).setAction("STOP"),
@@ -39,7 +41,7 @@ class RingService : Service() {
         )
         val notif: Notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
-            .setContentTitle("حان الآن موعد الفجر")
+            .setContentTitle(title)
             .setContentText("اضغط إيقاف لإسكات الجرس")
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setOngoing(true)

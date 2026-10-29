@@ -7,7 +7,9 @@ import androidx.core.content.ContextCompat
 
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        ContextCompat.startForegroundService(context, Intent(context, RingService::class.java))
-        FajrScheduler.schedule(context) // جدول فجر بكرة بتوقيته الجديد
+        val svc = Intent(context, RingService::class.java)
+            .putExtra("prayer", intent.getStringExtra("prayer"))
+        ContextCompat.startForegroundService(context, svc)
+        FajrScheduler.schedule(context) // جدول الصلاة اللي بعدها
     }
 }

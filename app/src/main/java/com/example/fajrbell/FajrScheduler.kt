@@ -12,6 +12,14 @@ import com.batoulapps.adhan.data.DateComponents
 import java.util.Calendar
 import java.util.Date
 
+enum class Prayer(val ar: String) {
+    FAJR("الفجر"),
+    DHUHR("الظهر"),
+    ASR("العصر"),
+    MAGHRIB("المغرب"),
+    ISHA("العشاء")
+}
+
 object FajrScheduler {
 
     // ===== عدّل مكانك هنا =====
@@ -19,20 +27,37 @@ object FajrScheduler {
     const val LONGITUDE = 31.2357
     // ==========================
 
-    class Next(val fajr: Date, val ring: Date)
+    class Next(val prayer: Prayer, val time: Date, val ring: Date)
 
-    /** أقرب رنة جاية: وقت الفجر المحسوب + وقت الرنين بعد التعديل */
-    fun next(context: Context): Next {
-        val coords = Coordinates(LATITUDE, LONGITUDE)
-        val params = CalculationMethod.EGYPTIAN.parameters
+    /** مواقيت الصلوات الخمس بطريقة الهيئة المصرية ليوم معين (0 = النهارده) */
+    fun timesFor(dayOffset: Int): Map<Prayer, Date> {
+        val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+        val t = PrayerTimes(
+            Coordinates(LATITUDE, LONGITUDE),
+            DateComponents.from(cal.time),
+            CalculationMethod.EGYPTIAN.parameters
+        )
+        return linkedMapOf(
+            Prayer.FAJR to t.fajr,
+            Prayer.DHUHR to t.dhuhr,
+            Prayer.ASR to t.asr,
+            Prayer.MAGHRIB to t.maghrib,
+            Prayer.ISHA to t.isha
+        )
+    }
+
+    /** أقرب رنة جاية بين الصلوات المفعّلة، أو null لو مفيش صلاة مفعّلة */
+    fun next(context: Context): Next? {
         val offsetMs = Prefs.offset(context) * 60_000L
-        for (dayOffset in 0..3) {
-            val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
-            val fajr = PrayerTimes(coords, DateComponents.from(cal.time), params).fajr
-            val ring = fajr.time + offsetMs
-            if (ring > System.currentTimeMillis()) return Next(fajr, Date(ring))
+        val now = System.currentTimeMillis()
+        for (day in 0..3) {
+            for ((prayer, time) in timesFor(day)) {
+                if (!Prefs.prayerEnabled(context, prayer)) continue
+                val ring = time.time + offsetMs
+                if (ring > now) return Next(prayer, time, Date(ring))
+            }
         }
-        error("no upcoming fajr found")
+        return null
     }
 
     fun canSchedule(context: Context): Boolean {
@@ -40,22 +65,32 @@ object FajrScheduler {
         return context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
     }
 
+    private fun ringPendingIntent(context: Context, prayer: Prayer?): PendingIntent {
+        val i = Intent(context, AlarmReceiver::class.java)
+        if (prayer != null) i.putExtra("prayer", prayer.ar)
+        return PendingIntent.getBroadcast(
+            context, 1, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
     /** بيرجع true لو اتجدول بنجاح، false لو الإذن ناقص (من غير ما التطبيق يقفل) */
     fun schedule(context: Context): Boolean {
         if (!canSchedule(context)) return false
+        val n = next(context)
+        if (n == null) {
+            cancel(context)
+            return true
+        }
         return try {
             val am = context.getSystemService(AlarmManager::class.java)
-            val trigger = next(context).ring.time
-
-            val ringIntent = PendingIntent.getBroadcast(
-                context, 1, Intent(context, AlarmReceiver::class.java),
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
             val showIntent = PendingIntent.getActivity(
                 context, 2, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE
             )
-            am.setAlarmClock(AlarmManager.AlarmClockInfo(trigger, showIntent), ringIntent)
+            am.setAlarmClock(
+                AlarmManager.AlarmClockInfo(n.ring.time, showIntent),
+                ringPendingIntent(context, n.prayer)
+            )
             true
         } catch (e: SecurityException) {
             false
@@ -64,10 +99,6 @@ object FajrScheduler {
 
     fun cancel(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
-        val ringIntent = PendingIntent.getBroadcast(
-            context, 1, Intent(context, AlarmReceiver::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        am.cancel(ringIntent)
+        am.cancel(ringPendingIntent(context, null))
     }
 }

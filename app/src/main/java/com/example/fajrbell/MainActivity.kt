@@ -18,6 +18,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import java.text.SimpleDateFormat
@@ -27,13 +28,14 @@ import kotlin.math.abs
 class MainActivity : AppCompatActivity() {
 
     private lateinit var statusText: TextView
+    private lateinit var prayerNameText: TextView
     private lateinit var ringTimeText: TextView
     private lateinit var dateText: TextView
-    private lateinit var fajrText: TextView
     private lateinit var offsetText: TextView
     private lateinit var soundText: TextView
     private lateinit var durationText: TextView
     private lateinit var toggle: Button
+    private val switches = LinkedHashMap<Prayer, SwitchCompat>()
 
     private val ringtonePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
@@ -72,9 +74,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         statusText = label(16f)
+        prayerNameText = label(22f)
         ringTimeText = label(44f)
         dateText = label(16f)
-        fajrText = label(15f)
         offsetText = label(17f)
         soundText = label(15f)
         durationText = label(17f)
@@ -96,19 +98,37 @@ class MainActivity : AppCompatActivity() {
         }
 
         root.addView(statusText)
+        root.addView(prayerNameText)
         root.addView(ringTimeText)
         root.addView(dateText)
-        root.addView(fajrText)
         root.addView(toggle)
 
-        root.addView(title("⏰ تعديل وقت الرنين"))
+        // ----- الصلوات -----
+        root.addView(title("🕌 الصلوات (فعّل أو أوقف جرس كل صلاة)"))
+        Prayer.values().forEach { p ->
+            val sw = SwitchCompat(this).apply {
+                textSize = 17f
+                setPadding(0, 20, 0, 20)
+                setOnClickListener {
+                    Prefs.setPrayerEnabled(this@MainActivity, p, isChecked)
+                    if (Prefs.enabled(this@MainActivity)) FajrScheduler.schedule(this@MainActivity)
+                    refresh()
+                }
+            }
+            switches[p] = sw
+            root.addView(sw)
+        }
+
+        // ----- وقت الرنين -----
+        root.addView(title("⏰ تعديل وقت الرنين (لكل الصلوات)"))
         root.addView(offsetText)
         root.addView(stepper(
             "−10" to { changeOffset(-10) }, "−1" to { changeOffset(-1) },
             "+1" to { changeOffset(1) }, "+10" to { changeOffset(10) }
         ))
-        root.addView(btn("رجوع لوقت الفجر بالظبط") { setOffset(0) })
+        root.addView(btn("رجوع لوقت الأذان بالظبط") { setOffset(0) })
 
+        // ----- المنبه -----
         root.addView(title("🔔 تعديل المنبه"))
         root.addView(soundText)
         root.addView(btn("اختيار نغمة من نغمات التليفون") {
@@ -193,17 +213,32 @@ class MainActivity : AppCompatActivity() {
         val tf = SimpleDateFormat("hh:mm a", Locale("ar"))
         val df = SimpleDateFormat("EEEE d MMMM", Locale("ar"))
 
-        statusText.text = if (on) "✅ جرس الفجر شغال، هيرن الساعة:" else "⛔ الجرس متوقف (هيرن الساعة كده لو شغلته):"
-        ringTimeText.text = tf.format(n.ring)
-        dateText.text = df.format(n.ring)
-        fajrText.text = "أذان الفجر المحسوب: " + tf.format(n.fajr)
-        toggle.text = if (on) "إيقاف جرس الفجر" else "تشغيل جرس الفجر"
+        statusText.text = if (on) "✅ الجرس شغال، أقرب رنة:" else "⛔ الجرس متوقف (أقرب رنة لو شغلته):"
+        if (n != null) {
+            prayerNameText.text = "صلاة " + n.prayer.ar
+            ringTimeText.text = tf.format(n.ring)
+            dateText.text = df.format(n.ring)
+        } else {
+            prayerNameText.text = "مفيش صلاة مفعّلة"
+            ringTimeText.text = "--:--"
+            dateText.text = ""
+        }
+        toggle.text = if (on) "إيقاف الجرس" else "تشغيل الجرس"
 
         val off = Prefs.offset(this)
+        val today = FajrScheduler.timesFor(0)
+        for ((p, sw) in switches) {
+            val time = today.getValue(p)
+            var t = p.ar + "   " + tf.format(time)
+            if (off != 0) t += "  ←  الجرس " + tf.format(java.util.Date(time.time + off * 60_000L))
+            sw.text = t
+            sw.isChecked = Prefs.prayerEnabled(this, p)
+        }
+
         offsetText.text = when {
-            off == 0 -> "الجرس على وقت الفجر بالظبط"
-            off < 0 -> "الجرس قبل الفجر بـ ${abs(off)} دقيقة"
-            else -> "الجرس بعد الفجر بـ $off دقيقة"
+            off == 0 -> "الجرس على وقت الأذان بالظبط"
+            off < 0 -> "الجرس قبل الأذان بـ ${abs(off)} دقيقة"
+            else -> "الجرس بعد الأذان بـ $off دقيقة"
         }
         durationText.text = "مدة الرنين: ${Prefs.duration(this)} ثانية"
         soundText.text = "النغمة الحالية: " + soundName()
