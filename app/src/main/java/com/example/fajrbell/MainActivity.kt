@@ -8,12 +8,14 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.OpenableColumns
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -78,9 +80,12 @@ class MainActivity : AppCompatActivity() {
         durationText = label(17f)
 
         toggle = btn("") {
-            val on = !Prefs.enabled(this)
-            Prefs.setEnabled(this, on)
-            if (on) FajrScheduler.schedule(this) else FajrScheduler.cancel(this)
+            if (Prefs.enabled(this)) {
+                Prefs.setEnabled(this, false)
+                FajrScheduler.cancel(this)
+            } else {
+                tryEnable()
+            }
             refresh()
         }
 
@@ -137,9 +142,35 @@ class MainActivity : AppCompatActivity() {
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
+    private var waitingForPermission = false
+
     override fun onResume() {
         super.onResume()
+        if (waitingForPermission && FajrScheduler.schedule(this)) {
+            Prefs.setEnabled(this, true)
+            waitingForPermission = false
+        }
         refresh()
+    }
+
+    private fun tryEnable() {
+        if (FajrScheduler.schedule(this)) {
+            Prefs.setEnabled(this, true)
+            waitingForPermission = false
+            return
+        }
+        // الإذن ناقص: افتح شاشة السماح بالمنبهات
+        waitingForPermission = true
+        Toast.makeText(this, "فعّل «المنبهات والتذكيرات» للتطبيق ثم ارجع", Toast.LENGTH_LONG).show()
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName"))
+            )
+        } catch (_: Exception) {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+            )
+        }
     }
 
     // ---------- منطق ----------

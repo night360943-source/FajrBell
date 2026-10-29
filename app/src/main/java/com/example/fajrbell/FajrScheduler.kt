@@ -4,6 +4,7 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import com.batoulapps.adhan.CalculationMethod
 import com.batoulapps.adhan.Coordinates
 import com.batoulapps.adhan.PrayerTimes
@@ -34,19 +35,31 @@ object FajrScheduler {
         error("no upcoming fajr found")
     }
 
-    fun schedule(context: Context) {
-        val am = context.getSystemService(AlarmManager::class.java)
-        val trigger = next(context).ring.time
+    fun canSchedule(context: Context): Boolean {
+        if (Build.VERSION.SDK_INT < 31) return true
+        return context.getSystemService(AlarmManager::class.java).canScheduleExactAlarms()
+    }
 
-        val ringIntent = PendingIntent.getBroadcast(
-            context, 1, Intent(context, AlarmReceiver::class.java),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-        val showIntent = PendingIntent.getActivity(
-            context, 2, Intent(context, MainActivity::class.java),
-            PendingIntent.FLAG_IMMUTABLE
-        )
-        am.setAlarmClock(AlarmManager.AlarmClockInfo(trigger, showIntent), ringIntent)
+    /** بيرجع true لو اتجدول بنجاح، false لو الإذن ناقص (من غير ما التطبيق يقفل) */
+    fun schedule(context: Context): Boolean {
+        if (!canSchedule(context)) return false
+        return try {
+            val am = context.getSystemService(AlarmManager::class.java)
+            val trigger = next(context).ring.time
+
+            val ringIntent = PendingIntent.getBroadcast(
+                context, 1, Intent(context, AlarmReceiver::class.java),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val showIntent = PendingIntent.getActivity(
+                context, 2, Intent(context, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE
+            )
+            am.setAlarmClock(AlarmManager.AlarmClockInfo(trigger, showIntent), ringIntent)
+            true
+        } catch (e: SecurityException) {
+            false
+        }
     }
 
     fun cancel(context: Context) {
