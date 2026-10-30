@@ -96,7 +96,7 @@ class MainActivity : AppCompatActivity() {
         nextLabel = label(20f)
         countdownText = label(48f)
         adhanText = label(16f)
-        bellText = label(16f)
+        bellText = label(14f)
         durationText = label(17f)
 
         toggle = btn("") {
@@ -290,7 +290,9 @@ class MainActivity : AppCompatActivity() {
         val next = FajrScheduler.window(now).second
         nextLabel.text = "باقي على صلاة " + next.prayer.ar
         countdownText.text = Fmt.hms(next.time.time - now)
-        adhanText.text = "الأذان الساعة " + Fmt.time(next.time)
+        var line = "الأذان الساعة " + Fmt.time(next.time)
+        if (!Prefs.prayerEnabled(this, next.prayer)) line += "   •   🔕 جرسها مقفول"
+        adhanText.text = line
     }
 
     private fun refresh() {

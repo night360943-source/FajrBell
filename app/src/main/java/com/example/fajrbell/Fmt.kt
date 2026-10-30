@@ -26,4 +26,20 @@ object Fmt {
         val s = ms.coerceAtLeast(0L) / 1000L
         return String.format(Locale.US, "%02d:%02d:%02d", s / 3600, (s % 3600) / 60, s % 60)
     }
+
+    /** الساعة بس بدون ص/م. مثال: 4:52 */
+    fun clock(d: Date): String {
+        val c = Calendar.getInstance()
+        c.time = d
+        var h = c.get(Calendar.HOUR)
+        if (h == 0) h = 12
+        return String.format(Locale.US, "%d:%02d", h, c.get(Calendar.MINUTE))
+    }
+
+    /** ص أو م */
+    fun ampm(d: Date): String {
+        val c = Calendar.getInstance()
+        c.time = d
+        return if (c.get(Calendar.AM_PM) == Calendar.AM) "ص" else "م"
+    }
 }

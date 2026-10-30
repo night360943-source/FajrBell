@@ -11,11 +11,15 @@ import android.graphics.Typeface
 import kotlin.math.max
 import kotlin.math.min
 
-/** بيرسم الودجت كله كصورة: دايرة مهشّرة + مواقيت الصلوات + الوقت المتبقي */
+/** بيرسم الودجت كله كصورة: دايرة رصاصي مهشّرة + مواقيت الصلوات + الوقت المتبقي */
 object WidgetRenderer {
 
-    private val GREEN = Color.parseColor("#0B6E4F")
-    private val GOLD = Color.parseColor("#F2C14E")
+    // ===== الألوان (تقدر تغيّرها) =====
+    private val SKY = Color.parseColor("#0A8FD4")      // الخلفية سماوي
+    private val GRAY = Color.parseColor("#A7AEB5")     // الدايرة رصاصي
+    private val RED = Color.parseColor("#E53935")      // تنبيه قرب الصلاة
+    private val YELLOW = Color.parseColor("#FFD60A")   // الوقت المتبقي
+    private const val WARN_MS = 5 * 60_000L            // ينقلب أحمر قبل الصلاة بـ 5 دقايق
 
     private fun textPaint(size: Float, bold: Boolean, color: Int, align: Paint.Align): Paint {
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -32,7 +36,7 @@ object WidgetRenderer {
         val now = System.currentTimeMillis()
         val window = FajrScheduler.window(now)
         val prev = window.first
-        val next = window.second
+        val next = window.second   // الصلاة القادمة (سواء جرسها شغال أو مقفول)
 
         val span = (next.time.time - prev.time.time).coerceAtLeast(1L)
         // يبدأ فاضي عند بداية الفترة ويمتلئ كله عند دخول وقت الصلاة القادمة
@@ -44,7 +48,7 @@ object WidgetRenderer {
         val hf = h.toFloat()
 
         val bg = Paint(Paint.ANTI_ALIAS_FLAG)
-        bg.color = GREEN
+        bg.color = SKY
         val corner = min(wf, hf) * 0.10f
         c.drawRoundRect(RectF(0f, 0f, wf, hf), corner, corner, bg)
 
@@ -79,6 +83,14 @@ object WidgetRenderer {
         return bmp
     }
 
+    private fun fullRing(cx: Float, cy: Float, outerR: Float, innerR: Float): Path {
+        val p = Path()
+        p.fillType = Path.FillType.EVEN_ODD
+        p.addCircle(cx, cy, outerR, Path.Direction.CW)
+        p.addCircle(cx, cy, innerR, Path.Direction.CW)
+        return p
+    }
+
     private fun drawRing(
         c: Canvas, r: RectF, progress: Float, remaining: Long, next: FajrScheduler.Slot
     ) {
@@ -86,37 +98,46 @@ object WidgetRenderer {
         val cy = r.centerY()
         val outerR = r.width() / 2f
         val innerR = outerR * 0.72f
+        val outer = RectF(cx - outerR, cy - outerR, cx + outerR, cy + outerR)
+        val inner = RectF(cx - innerR, cy - innerR, cx + innerR, cy + innerR)
 
-        // المجرى الأبيض
-        val track = Path()
-        track.fillType = Path.FillType.EVEN_ODD
-        track.addCircle(cx, cy, outerR, Path.Direction.CW)
-        track.addCircle(cx, cy, innerR, Path.Direction.CW)
-        val white = Paint(Paint.ANTI_ALIAS_FLAG)
-        white.color = Color.argb(240, 255, 255, 255)
-        c.drawPath(track, white)
+        // رصاصي، وبيتحول أحمر لما يفضل 5 دقايق أو أقل
+        val ringColor = if (remaining <= WARN_MS) RED else GRAY
 
-        // الجزء المهشّر (بيكبر مع الوقت)
-        val sector = Path()
-        if (progress >= 0.999f) {
-            sector.fillType = Path.FillType.EVEN_ODD
-            sector.addCircle(cx, cy, outerR, Path.Direction.CW)
-            sector.addCircle(cx, cy, innerR, Path.Direction.CW)
-        } else if (progress > 0.002f) {
+        // الجزء اللي لسه ماعداش من الوقت: رصاصي مصمت
+        val solid = Paint(Paint.ANTI_ALIAS_FLAG)
+        solid.color = ringColor
+        solid.style = Paint.Style.FILL
+        if (progress < 0.002f) {
+            c.drawPath(fullRing(cx, cy, outerR, innerR), solid)
+        } else if (progress < 0.999f) {
             val sweep = 360f * progress
-            val outer = RectF(cx - outerR, cy - outerR, cx + outerR, cy + outerR)
-            val inner = RectF(cx - innerR, cy - innerR, cx + innerR, cy + innerR)
-            sector.arcTo(outer, -90f, sweep)
-            sector.arcTo(inner, -90f + sweep, -sweep)
-            sector.close()
+            val rest = Path()
+            rest.arcTo(outer, -90f + sweep, 360f - sweep)
+            rest.arcTo(inner, 270f, -(360f - sweep))
+            rest.close()
+            c.drawPath(rest, solid)
         }
-        if (!sector.isEmpty) {
+
+        // الجزء اللي عدى من الوقت: تهشير شفاف (خطوط مائلة بينها فراغ شفاف)
+        if (progress > 0.002f) {
+            val elapsed: Path
+            if (progress >= 0.999f) {
+                elapsed = fullRing(cx, cy, outerR, innerR)
+            } else {
+                val sweep = 360f * progress
+                elapsed = Path()
+                elapsed.arcTo(outer, -90f, sweep)
+                elapsed.arcTo(inner, -90f + sweep, -sweep)
+                elapsed.close()
+            }
+
             c.save()
-            c.clipPath(sector)
+            c.clipPath(elapsed)
             val hatch = Paint(Paint.ANTI_ALIAS_FLAG)
-            hatch.color = GREEN
+            hatch.color = ringColor
             hatch.style = Paint.Style.STROKE
-            hatch.strokeWidth = max(2f, outerR * 0.035f)
+            hatch.strokeWidth = max(2f, outerR * 0.04f)
             val step = max(6f, outerR * 0.11f)
             var x = cx - outerR * 3f
             while (x < cx + outerR) {
@@ -126,30 +147,38 @@ object WidgetRenderer {
             c.restore()
 
             val edge = Paint(Paint.ANTI_ALIAS_FLAG)
-            edge.color = GREEN
+            edge.color = ringColor
             edge.style = Paint.Style.STROKE
-            edge.strokeWidth = max(2f, outerR * 0.02f)
-            c.drawPath(sector, edge)
+            edge.strokeWidth = max(1.5f, outerR * 0.015f)
+            c.drawPath(elapsed, edge)
         }
 
-        // النص جوه الدايرة
-        val bigSize = innerR * 0.55f
-        val nameSize = innerR * 0.27f
-        val subSize = innerR * 0.22f
+        // النص جوه الدايرة: اسم الصلاة، وقت الأذان كبير، والمتبقي بالأصفر
+        val numSize = innerR * 0.56f
+        val apSize = numSize * 0.42f
+        val nameSize = innerR * 0.22f
+        val remSize = innerR * 0.27f
+
         c.drawText(
-            "صلاة " + next.prayer.ar, cx, cy - bigSize * 0.55f,
+            "صلاة " + next.prayer.ar, cx, cy - numSize * 0.80f,
             textPaint(nameSize, false, Color.WHITE, Paint.Align.CENTER)
         )
+
+        val num = Fmt.clock(next.time)
+        val ap = Fmt.ampm(next.time)
+        val numPaint = textPaint(numSize, true, Color.WHITE, Paint.Align.LEFT)
+        val apPaint = textPaint(apSize, true, Color.WHITE, Paint.Align.LEFT)
+        val gap = numSize * 0.12f
+        val total = numPaint.measureText(num) + gap + apPaint.measureText(ap)
+        val x0 = cx - total / 2f
+        val numBase = cy + numSize * 0.15f
+        c.drawText(num, x0, numBase, numPaint)
+        c.drawText(ap, x0 + numPaint.measureText(num) + gap, numBase, apPaint)
+
         c.drawText(
-            Fmt.hm(remaining), cx, cy + bigSize * 0.32f,
-            textPaint(bigSize, true, Color.WHITE, Paint.Align.CENTER)
+            "باقي " + Fmt.hm(remaining), cx, numBase + remSize * 1.55f,
+            textPaint(remSize, true, YELLOW, Paint.Align.CENTER)
         )
-        if (innerR > 55f) {
-            c.drawText(
-                "الأذان " + Fmt.time(next.time), cx, cy + bigSize * 0.32f + subSize * 1.6f,
-                textPaint(subSize, false, GOLD, Paint.Align.CENTER)
-            )
-        }
     }
 
     private fun drawList(c: Canvas, r: RectF, next: FajrScheduler.Slot, now: Long) {
@@ -172,7 +201,7 @@ object WidgetRenderer {
             }
 
             val alpha = if (t.time < now) 150 else 255
-            val col = if (isNext) GOLD else Color.argb(alpha, 255, 255, 255)
+            val col = if (isNext) YELLOW else Color.argb(alpha, 255, 255, 255)
             val base = top + rowH / 2f + size * 0.35f
             c.drawText(
                 p.ar, r.right - rowH * 0.25f, base,
