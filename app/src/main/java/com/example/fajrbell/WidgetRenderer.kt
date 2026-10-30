@@ -20,8 +20,8 @@ import kotlin.math.min
 object WidgetRenderer {
 
     // ===== الألوان (تقدر تغيّرها) =====
-    private val BABY_TOP = Color.parseColor("#9AD3F3")      // الأزرق اللبني فوق (أغمق)
-    private val BABY_BOTTOM = Color.parseColor("#62B5E8")
+    private val BABY_TOP = Color.parseColor("#1F6599")      // خارج الدايرة: نفس كحلي كبسولة "باقي" بس أفتح شوية
+    private val BABY_BOTTOM = Color.parseColor("#18527F")
     private val PANEL_TOP = Color.parseColor("#7B848C")     // الرصاصي تحت
     private val PANEL_BOTTOM = Color.parseColor("#59626A")
     private val NAVY = Color.parseColor("#0B3A5B")          // نصوص فوق
@@ -119,8 +119,8 @@ object WidgetRenderer {
         val hijri = Fmt.hijri(Prefs.hijriAdjust(context))
         val greg = Fmt.gregorian()
         val dateBase = pad * 0.6f + headerH * 0.72f
-        c.drawText(hijri, pad * 1.6f, dateBase, fit(hijri, dateSize, half, true, NAVY, Paint.Align.LEFT))
-        c.drawText(greg, wf - pad * 1.6f, dateBase, fit(greg, dateSize, half, false, NAVY, Paint.Align.RIGHT))
+        c.drawText(hijri, pad * 1.6f, dateBase, fit(hijri, dateSize, half, true, Color.WHITE, Paint.Align.LEFT))
+        c.drawText(greg, wf - pad * 1.6f, dateBase, fit(greg, dateSize, half, false, Color.WHITE, Paint.Align.RIGHT))
 
         // ----- الدايرة -----
         val ringTop = pad * 0.6f + headerH + pad * 0.4f
@@ -150,9 +150,9 @@ object WidgetRenderer {
         val trackColor = if (warn) RED_TRACK else TRACK
         val hatchColor = if (warn) RED else BLUE
 
-        // قرص أبيض خفيف جوه الدايرة عشان النص يبان
+        // جوه الدايرة: أبيض مصمت بلون واحد
         val disc = Paint(Paint.ANTI_ALIAS_FLAG)
-        disc.color = Color.argb(110, 255, 255, 255)
+        disc.color = Color.WHITE
         c.drawCircle(cx, cy, innerR, disc)
 
         // الجزء اللي لسه ماعداش: رصاصي شفاف مصمت (من غير تهشير)
@@ -207,8 +207,8 @@ object WidgetRenderer {
         // حافة بيضا رفيعة بره وجوه الدايرة
         val rim = Paint(Paint.ANTI_ALIAS_FLAG)
         rim.style = Paint.Style.STROKE
-        rim.color = Color.argb(170, 255, 255, 255)
-        rim.strokeWidth = max(1.5f, outerR * 0.02f)
+        rim.color = Color.argb(230, 255, 255, 255)
+        rim.strokeWidth = max(1.5f, outerR * 0.028f)
         c.drawCircle(cx, cy, outerR, rim)
         c.drawCircle(cx, cy, innerR, rim)
 
