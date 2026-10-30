@@ -20,15 +20,15 @@ import kotlin.math.min
 object WidgetRenderer {
 
     // ===== الألوان (تقدر تغيّرها) =====
-    private val BABY_TOP = Color.parseColor("#E3F4FC")      // اللبني فوق
-    private val BABY_BOTTOM = Color.parseColor("#B3DCF2")
+    private val BABY_TOP = Color.parseColor("#9AD3F3")      // الأزرق اللبني فوق (أغمق)
+    private val BABY_BOTTOM = Color.parseColor("#62B5E8")
     private val PANEL_TOP = Color.parseColor("#7B848C")     // الرصاصي تحت
     private val PANEL_BOTTOM = Color.parseColor("#59626A")
     private val NAVY = Color.parseColor("#0B3A5B")          // نصوص فوق
-    private val BLUE = Color.parseColor("#1E88E5")          // التهشير الأزرق
-    private val TRACK = Color.argb(120, 108, 117, 125)      // رصاصي شفاف
+    private val BLUE = Color.parseColor("#4C9FD6")          // التهشير: نفس أزرق الخلفية (أغمق شوية عشان يبان)
+    private val TRACK = Color.argb(235, 46, 53, 59)         // الرصاصي الغامق
     private val RED = Color.parseColor("#E53935")           // تنبيه
-    private val RED_TRACK = Color.argb(150, 229, 57, 53)
+    private val RED_TRACK = Color.argb(235, 211, 47, 47)
     private val YELLOW = Color.parseColor("#FFD60A")        // الوقت المتبقي
     private const val WARN_MS = 5 * 60_000L                 // أحمر قبل الصلاة بـ 5 دقايق
 
