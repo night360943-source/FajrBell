@@ -28,8 +28,16 @@ class RingService : Service() {
             return START_NOT_STICKY
         }
 
-        val prayerName = intent?.getStringExtra("prayer")
-        val title = if (prayerName != null) "حان الآن موعد صلاة $prayerName" else "تجربة الجرس"
+        val prayer: Prayer? = intent?.getStringExtra("key")?.let {
+            try { Prayer.valueOf(it) } catch (e: Exception) { null }
+        }
+        val isTest = intent?.getBooleanExtra("test", false) ?: false
+        val title = when {
+            prayer == null -> "تجربة الجرس"
+            isTest -> "تجربة جرس صلاة " + prayer.ar
+            else -> "حان الآن موعد صلاة " + prayer.ar
+        }
+
         val channelId = "fajr_bell"
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
@@ -54,7 +62,7 @@ class RingService : Service() {
             startForeground(10, notif)
         }
 
-        startSound()
+        startSound(prayer)
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed({ stopSelf() }, Prefs.duration(this) * 1000L)
         return START_NOT_STICKY
@@ -80,15 +88,15 @@ class RingService : Service() {
         }
     }
 
-    private fun startSound() {
+    private fun startSound(prayer: Prayer?) {
         player?.release()
         player = null
-        val saved = Prefs.sound(this)?.let { Uri.parse(it) }
+        val saved = if (prayer != null) Prefs.sound(this, prayer)?.let { Uri.parse(it) } else null
         val resId = resources.getIdentifier("bell", "raw", packageName)
         val raw = if (resId != 0) Uri.parse("android.resource://$packageName/$resId") else null
         val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
 
-        // الأولوية: النغمة اللي اخترتها > bell.mp3 > نغمة المنبه الافتراضية
+        // الأولوية: نغمة الصلاة اللي اخترتها > bell.mp3 > نغمة المنبه الافتراضية
         for (uri in listOfNotNull(saved, raw, fallback)) {
             try {
                 player = buildPlayer(uri)

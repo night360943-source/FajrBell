@@ -3,10 +3,13 @@ package com.example.fajrbell
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.media.RingtoneManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.Gravity
@@ -17,54 +20,71 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import java.text.SimpleDateFormat
-import java.util.Locale
+import java.util.Date
 import kotlin.math.abs
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var statusText: TextView
-    private lateinit var prayerNameText: TextView
-    private lateinit var ringTimeText: TextView
-    private lateinit var dateText: TextView
-    private lateinit var offsetText: TextView
-    private lateinit var soundText: TextView
+    private class Row(val sw: SwitchCompat, val offsetText: TextView, val soundText: TextView)
+
+    private lateinit var bellText: TextView
+    private lateinit var nextLabel: TextView
+    private lateinit var countdownText: TextView
+    private lateinit var adhanText: TextView
     private lateinit var durationText: TextView
     private lateinit var toggle: Button
-    private val switches = LinkedHashMap<Prayer, SwitchCompat>()
+
+    private val rows = LinkedHashMap<Prayer, Row>()
+    private var pendingPrayer: Prayer? = null
+    private var waitingForPermission = false
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val ticker = object : Runnable {
+        override fun run() {
+            updateCountdown()
+            handler.postDelayed(this, 1000)
+        }
+    }
 
     private val ringtonePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-            if (r.resultCode == RESULT_OK) {
+            val p = pendingPrayer
+            if (p != null && r.resultCode == RESULT_OK) {
                 val uri: Uri? = if (Build.VERSION.SDK_INT >= 33)
                     r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
                 else
                     @Suppress("DEPRECATION")
                     r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-                Prefs.setSound(this, uri?.toString())
+                Prefs.setSound(this, p, uri?.toString())
                 refresh()
             }
         }
 
     private val filePicker =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            if (uri != null) {
+            val p = pendingPrayer
+            if (uri != null && p != null) {
                 try {
                     contentResolver.takePersistableUriPermission(
                         uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
                 } catch (_: Exception) { }
-                Prefs.setSound(this, uri.toString())
+                Prefs.setSound(this, p, uri.toString())
                 refresh()
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        savedInstanceState?.getString("pp")?.let {
+            try { pendingPrayer = Prayer.valueOf(it) } catch (_: Exception) { }
+        }
 
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
@@ -73,12 +93,10 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         }
 
-        statusText = label(16f)
-        prayerNameText = label(22f)
-        ringTimeText = label(44f)
-        dateText = label(16f)
-        offsetText = label(17f)
-        soundText = label(15f)
+        nextLabel = label(20f)
+        countdownText = label(48f)
+        adhanText = label(16f)
+        bellText = label(16f)
         durationText = label(17f)
 
         toggle = btn("") {
@@ -97,72 +115,40 @@ class MainActivity : AppCompatActivity() {
             setPadding(40, 48, 40, 48)
         }
 
-        root.addView(statusText)
-        root.addView(prayerNameText)
-        root.addView(ringTimeText)
-        root.addView(dateText)
+        // ----- الصلاة القادمة والوقت المتبقي -----
+        root.addView(nextLabel)
+        root.addView(countdownText)
+        root.addView(adhanText)
+        root.addView(bellText)
         root.addView(toggle)
 
-        // ----- الصلوات -----
-        root.addView(title("🕌 الصلوات (فعّل أو أوقف جرس كل صلاة)"))
+        // ----- كل صلاة -----
+        root.addView(title("🕌 الصلوات (الجرس والوقت والنغمة لكل صلاة)"))
         Prayer.values().forEach { p ->
-            val sw = SwitchCompat(this).apply {
-                textSize = 17f
-                setPadding(0, 20, 0, 20)
-                setOnClickListener {
-                    Prefs.setPrayerEnabled(this@MainActivity, p, isChecked)
-                    if (Prefs.enabled(this@MainActivity)) FajrScheduler.schedule(this@MainActivity)
-                    refresh()
-                }
-            }
-            switches[p] = sw
-            root.addView(sw)
+            root.addView(
+                buildPrayerCard(p),
+                LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.MATCH_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = 24 }
+            )
         }
 
-        // ----- وقت الرنين -----
-        root.addView(title("⏰ تعديل وقت الرنين (لكل الصلوات)"))
-        root.addView(offsetText)
-        root.addView(stepper(
-            "−10" to { changeOffset(-10) }, "−1" to { changeOffset(-1) },
-            "+1" to { changeOffset(1) }, "+10" to { changeOffset(10) }
-        ))
-        root.addView(btn("رجوع لوقت الأذان بالظبط") { setOffset(0) })
-
-        // ----- المنبه -----
-        root.addView(title("🔔 تعديل المنبه"))
-        root.addView(soundText)
-        root.addView(btn("اختيار نغمة من نغمات التليفون") {
-            val i = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-                putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-                putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-                Prefs.sound(this@MainActivity)?.let {
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(it))
-                }
-            }
-            ringtonePicker.launch(i)
-        })
-        root.addView(btn("اختيار ملف صوت من التليفون (mp3)") {
-            filePicker.launch(arrayOf("audio/*"))
-        })
-        root.addView(btn("نغمة المنبه الافتراضية") {
-            Prefs.setSound(this, null); refresh()
-        })
-
+        // ----- مدة الرنين -----
+        root.addView(title("⏱ مدة الرنين (لكل الصلوات)"))
         root.addView(durationText)
         root.addView(stepper(
             "−30" to { changeDuration(-30) }, "−10" to { changeDuration(-10) },
             "+10" to { changeDuration(10) }, "+30" to { changeDuration(30) }
         ))
 
-        root.addView(btn("تجربة الجرس الآن") {
-            ContextCompat.startForegroundService(this, Intent(this, RingService::class.java))
-        })
-
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
-    private var waitingForPermission = false
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putString("pp", pendingPrayer?.name)
+    }
 
     override fun onResume() {
         super.onResume()
@@ -171,6 +157,97 @@ class MainActivity : AppCompatActivity() {
             waitingForPermission = false
         }
         refresh()
+        handler.post(ticker)
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(ticker)
+    }
+
+    // ---------- كارت كل صلاة ----------
+    private fun buildPrayerCard(p: Prayer): View {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(24, 16, 24, 16)
+            setBackgroundColor(Color.argb(28, 128, 128, 128))
+        }
+
+        val sw = SwitchCompat(this).apply {
+            textSize = 18f
+            setPadding(0, 16, 0, 16)
+            setOnClickListener {
+                Prefs.setPrayerEnabled(this@MainActivity, p, isChecked)
+                if (Prefs.enabled(this@MainActivity)) FajrScheduler.schedule(this@MainActivity)
+                refresh()
+            }
+        }
+
+        val offsetText = label(16f)
+        val soundText = label(15f)
+
+        val details = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        details.addView(offsetText)
+        details.addView(stepper(
+            "−10" to { changeOffset(p, -10) }, "−1" to { changeOffset(p, -1) },
+            "+1" to { changeOffset(p, 1) }, "+10" to { changeOffset(p, 10) }
+        ))
+        details.addView(btn("الجرس على الأذان بالظبط") { setOffset(p, 0) })
+        details.addView(soundText)
+        details.addView(btn("تغيير النغمة") { chooseSound(p) })
+        details.addView(btn("تجربة جرس " + p.ar) {
+            val i = Intent(this, RingService::class.java)
+                .putExtra("key", p.name)
+                .putExtra("test", true)
+            ContextCompat.startForegroundService(this, i)
+        })
+
+        val edit = btn("⚙ تعديل الوقت والنغمة") {
+            details.visibility = if (details.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
+
+        card.addView(sw)
+        card.addView(edit)
+        card.addView(details)
+
+        rows[p] = Row(sw, offsetText, soundText)
+        return card
+    }
+
+    private fun chooseSound(p: Prayer) {
+        pendingPrayer = p
+        AlertDialog.Builder(this)
+            .setTitle("نغمة صلاة " + p.ar)
+            .setItems(
+                arrayOf(
+                    "اختيار نغمة من نغمات التليفون",
+                    "اختيار ملف صوت من التليفون (mp3)",
+                    "النغمة الافتراضية"
+                )
+            ) { _, which ->
+                when (which) {
+                    0 -> {
+                        val i = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
+                            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
+                            Prefs.sound(this@MainActivity, p)?.let {
+                                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(it))
+                            }
+                        }
+                        ringtonePicker.launch(i)
+                    }
+                    1 -> filePicker.launch(arrayOf("audio/*"))
+                    else -> {
+                        Prefs.setSound(this, p, null)
+                        refresh()
+                    }
+                }
+            }
+            .show()
     }
 
     private fun tryEnable() {
@@ -194,61 +271,68 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ---------- منطق ----------
-    private fun setOffset(v: Int) {
-        Prefs.setOffset(this, v.coerceIn(-180, 180))
+    private fun setOffset(p: Prayer, v: Int) {
+        Prefs.setOffset(this, p, v.coerceIn(-180, 180))
         if (Prefs.enabled(this)) FajrScheduler.schedule(this)
         refresh()
     }
 
-    private fun changeOffset(d: Int) = setOffset(Prefs.offset(this) + d)
+    private fun changeOffset(p: Prayer, d: Int) = setOffset(p, Prefs.offset(this, p) + d)
 
     private fun changeDuration(d: Int) {
         Prefs.setDuration(this, (Prefs.duration(this) + d).coerceIn(10, 300))
         refresh()
     }
 
+    /** الوقت المتبقي للصلاة القادمة (مش للجرس) */
+    private fun updateCountdown() {
+        val now = System.currentTimeMillis()
+        val next = FajrScheduler.window(now).second
+        nextLabel.text = "باقي على صلاة " + next.prayer.ar
+        countdownText.text = Fmt.hms(next.time.time - now)
+        adhanText.text = "الأذان الساعة " + Fmt.time(next.time)
+    }
+
     private fun refresh() {
         val on = Prefs.enabled(this)
-        val n = FajrScheduler.next(this)
-        val tf = SimpleDateFormat("hh:mm a", Locale("ar"))
-        val df = SimpleDateFormat("EEEE d MMMM", Locale("ar"))
+        updateCountdown()
 
-        statusText.text = if (on) "✅ الجرس شغال، أقرب رنة:" else "⛔ الجرس متوقف (أقرب رنة لو شغلته):"
-        if (n != null) {
-            prayerNameText.text = "صلاة " + n.prayer.ar
-            ringTimeText.text = tf.format(n.ring)
-            dateText.text = df.format(n.ring)
-        } else {
-            prayerNameText.text = "مفيش صلاة مفعّلة"
-            ringTimeText.text = "--:--"
-            dateText.text = ""
+        val n = FajrScheduler.next(this)
+        bellText.text = when {
+            !on -> "🔕 الجرس متوقف"
+            n == null -> "🔔 الجرس شغال بس مفيش صلاة مفعّلة"
+            else -> "🔔 أقرب جرس: صلاة " + n.prayer.ar + " الساعة " + Fmt.time(n.ring)
         }
         toggle.text = if (on) "إيقاف الجرس" else "تشغيل الجرس"
 
-        val off = Prefs.offset(this)
-        val today = FajrScheduler.timesFor(0)
-        for ((p, sw) in switches) {
-            val time = today.getValue(p)
-            var t = p.ar + "   " + tf.format(time)
-            if (off != 0) t += "  ←  الجرس " + tf.format(java.util.Date(time.time + off * 60_000L))
-            sw.text = t
-            sw.isChecked = Prefs.prayerEnabled(this, p)
+        val shown = FajrScheduler.displayTimes()
+        for ((p, row) in rows) {
+            val time = shown.getValue(p)
+            val off = Prefs.offset(this, p)
+            var t = p.ar + "   " + Fmt.time(time)
+            if (off != 0) t += "  ←  الجرس " + Fmt.time(Date(time.time + off * 60_000L))
+            row.sw.text = t
+            row.sw.isChecked = Prefs.prayerEnabled(this, p)
+
+            row.offsetText.text = when {
+                off == 0 -> "الجرس على الأذان بالظبط"
+                off < 0 -> "الجرس قبل الأذان بـ " + abs(off) + " دقيقة"
+                else -> "الجرس بعد الأذان بـ " + off + " دقيقة"
+            }
+            row.soundText.text = "النغمة: " + soundName(p)
         }
 
-        offsetText.text = when {
-            off == 0 -> "الجرس على وقت الأذان بالظبط"
-            off < 0 -> "الجرس قبل الأذان بـ ${abs(off)} دقيقة"
-            else -> "الجرس بعد الأذان بـ $off دقيقة"
-        }
-        durationText.text = "مدة الرنين: ${Prefs.duration(this)} ثانية"
-        soundText.text = "النغمة الحالية: " + soundName()
+        durationText.text = "مدة الرنين: " + Prefs.duration(this) + " ثانية"
+        PrayerWidgetProvider.refreshAll(this)
     }
 
-    private fun soundName(): String {
-        val s = Prefs.sound(this) ?: return "نغمة المنبه الافتراضية"
+    private fun soundName(p: Prayer): String {
+        val s = Prefs.sound(this, p) ?: return "نغمة المنبه الافتراضية"
         val uri = Uri.parse(s)
         try {
-            if (uri.scheme == "content" && uri.authority != "media" && uri.authority?.startsWith("settings") != true) {
+            if (uri.scheme == "content" && uri.authority != "media" &&
+                uri.authority?.startsWith("settings") != true
+            ) {
                 contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use {
                     if (it.moveToFirst()) return it.getString(0)
                 }

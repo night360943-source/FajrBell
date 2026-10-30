@@ -27,6 +27,10 @@ object FajrScheduler {
     const val LONGITUDE = 31.2357
     // ==========================
 
+    /** موعد صلاة (أذان) */
+    class Slot(val prayer: Prayer, val time: Date)
+
+    /** رنة جاية: الصلاة + وقت الأذان + وقت الرنين بعد التعديل */
     class Next(val prayer: Prayer, val time: Date, val ring: Date)
 
     /** مواقيت الصلوات الخمس بطريقة الهيئة المصرية ليوم معين (0 = النهارده) */
@@ -46,18 +50,43 @@ object FajrScheduler {
         )
     }
 
+    private fun slots(): List<Slot> {
+        val all = ArrayList<Slot>()
+        for (d in -1..1) {
+            for ((p, t) in timesFor(d)) all.add(Slot(p, t))
+        }
+        return all.sortedBy { it.time.time }
+    }
+
+    /** الصلاة السابقة والصلاة القادمة (بغض النظر عن الجرس) */
+    fun window(now: Long = System.currentTimeMillis()): Pair<Slot, Slot> {
+        val all = slots()
+        val next = all.first { it.time.time > now }
+        val prev = all.last { it.time.time <= now }
+        return Pair(prev, next)
+    }
+
+    /** المواقيت اللي بتتعرض: النهارده، وبعد العشاء بتتحول لمواقيت بكرة */
+    fun displayTimes(now: Long = System.currentTimeMillis()): Map<Prayer, Date> {
+        val today = timesFor(0)
+        return if (now >= today.getValue(Prayer.ISHA).time) timesFor(1) else today
+    }
+
     /** أقرب رنة جاية بين الصلوات المفعّلة، أو null لو مفيش صلاة مفعّلة */
     fun next(context: Context): Next? {
-        val offsetMs = Prefs.offset(context) * 60_000L
         val now = System.currentTimeMillis()
+        var best: Next? = null
         for (day in 0..3) {
             for ((prayer, time) in timesFor(day)) {
                 if (!Prefs.prayerEnabled(context, prayer)) continue
-                val ring = time.time + offsetMs
-                if (ring > now) return Next(prayer, time, Date(ring))
+                val ring = time.time + Prefs.offset(context, prayer) * 60_000L
+                val b = best
+                if (ring > now && (b == null || ring < b.ring.time)) {
+                    best = Next(prayer, time, Date(ring))
+                }
             }
         }
-        return null
+        return best
     }
 
     fun canSchedule(context: Context): Boolean {
@@ -67,7 +96,7 @@ object FajrScheduler {
 
     private fun ringPendingIntent(context: Context, prayer: Prayer?): PendingIntent {
         val i = Intent(context, AlarmReceiver::class.java)
-        if (prayer != null) i.putExtra("prayer", prayer.ar)
+        if (prayer != null) i.putExtra("key", prayer.name)
         return PendingIntent.getBroadcast(
             context, 1, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
