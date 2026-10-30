@@ -1,5 +1,8 @@
 package com.example.fajrbell
 
+import java.time.LocalDate
+import java.time.chrono.HijrahDate
+import java.time.temporal.ChronoField
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
@@ -41,5 +44,38 @@ object Fmt {
         val c = Calendar.getInstance()
         c.time = d
         return if (c.get(Calendar.AM_PM) == Calendar.AM) "ص" else "م"
+    }
+
+    private val HIJRI_MONTHS = arrayOf(
+        "محرم", "صفر", "ربيع الأول", "ربيع الآخر", "جمادى الأولى", "جمادى الآخرة",
+        "رجب", "شعبان", "رمضان", "شوال", "ذو القعدة", "ذو الحجة"
+    )
+    private val GREG_MONTHS = arrayOf(
+        "يناير", "فبراير", "مارس", "أبريل", "مايو", "يونيو",
+        "يوليو", "أغسطس", "سبتمبر", "أكتوبر", "نوفمبر", "ديسمبر"
+    )
+
+    /** مثال: 19 جمادى الأولى 1448 (تقويم أم القرى + تعديل بالأيام) */
+    fun hijri(adjustDays: Int): String {
+        return try {
+            val d = HijrahDate.from(LocalDate.now().plusDays(adjustDays.toLong()))
+            String.format(
+                Locale.US, "%d %s %d",
+                d.get(ChronoField.DAY_OF_MONTH),
+                HIJRI_MONTHS[d.get(ChronoField.MONTH_OF_YEAR) - 1],
+                d.get(ChronoField.YEAR)
+            )
+        } catch (e: Exception) {
+            ""
+        }
+    }
+
+    /** مثال: 30 أكتوبر 2026 */
+    fun gregorian(): String {
+        val c = Calendar.getInstance()
+        return String.format(
+            Locale.US, "%d %s %d",
+            c.get(Calendar.DAY_OF_MONTH), GREG_MONTHS[c.get(Calendar.MONTH)], c.get(Calendar.YEAR)
+        )
     }
 }

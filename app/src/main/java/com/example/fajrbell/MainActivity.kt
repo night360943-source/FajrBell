@@ -37,6 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var countdownText: TextView
     private lateinit var adhanText: TextView
     private lateinit var durationText: TextView
+    private lateinit var dateText: TextView
     private lateinit var toggle: Button
 
     private val rows = LinkedHashMap<Prayer, Row>()
@@ -98,6 +99,7 @@ class MainActivity : AppCompatActivity() {
         adhanText = label(16f)
         bellText = label(14f)
         durationText = label(17f)
+        dateText = label(16f)
 
         toggle = btn("") {
             if (Prefs.enabled(this)) {
@@ -133,6 +135,13 @@ class MainActivity : AppCompatActivity() {
                 ).apply { topMargin = 24 }
             )
         }
+
+        // ----- التاريخ -----
+        root.addView(title("📅 التاريخ (الهجري والميلادي)"))
+        root.addView(dateText)
+        root.addView(stepper(
+            "−1 يوم" to { changeHijri(-1) }, "+1 يوم" to { changeHijri(1) }
+        ))
 
         // ----- مدة الرنين -----
         root.addView(title("⏱ مدة الرنين (لكل الصلوات)"))
@@ -279,6 +288,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun changeOffset(p: Prayer, d: Int) = setOffset(p, Prefs.offset(this, p) + d)
 
+    private fun changeHijri(d: Int) {
+        Prefs.setHijriAdjust(this, (Prefs.hijriAdjust(this) + d).coerceIn(-3, 3))
+        refresh()
+    }
+
     private fun changeDuration(d: Int) {
         Prefs.setDuration(this, (Prefs.duration(this) + d).coerceIn(10, 300))
         refresh()
@@ -324,6 +338,8 @@ class MainActivity : AppCompatActivity() {
             row.soundText.text = "النغمة: " + soundName(p)
         }
 
+        dateText.text = Fmt.hijri(Prefs.hijriAdjust(this)) + " هـ   |   " + Fmt.gregorian() +
+            "\nلو التاريخ الهجري مختلف يوم عندك، عدّله بالأزرار"
         durationText.text = "مدة الرنين: " + Prefs.duration(this) + " ثانية"
         PrayerWidgetProvider.refreshAll(this)
     }

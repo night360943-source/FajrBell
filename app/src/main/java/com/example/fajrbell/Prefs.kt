@@ -37,4 +37,8 @@ object Prefs {
     /** مدة الرنين بالثواني (لكل الصلوات) */
     fun duration(c: Context) = sp(c).getInt("duration", 60)
     fun setDuration(c: Context, v: Int) = sp(c).edit().putInt("duration", v).apply()
+
+    /** تعديل التاريخ الهجري بالأيام (لو اختلف يوم عن دار الإفتاء) */
+    fun hijriAdjust(c: Context) = sp(c).getInt("hijri_adjust", 0)
+    fun setHijriAdjust(c: Context, v: Int) = sp(c).edit().putInt("hijri_adjust", v).apply()
 }
