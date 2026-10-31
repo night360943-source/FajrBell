@@ -12,6 +12,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.sqrt
 
 /**
  * بيرسم الودجت كله كصورة:
@@ -30,7 +31,7 @@ object WidgetRenderer {
     private val RED = Color.parseColor("#E53935")           // تنبيه
     private val RED_TRACK = Color.argb(235, 211, 47, 47)
     private val YELLOW = Color.parseColor("#FFD60A")        // الوقت المتبقي
-    private const val WARN_MS = 5 * 60_000L                 // أحمر قبل الصلاة بـ 5 دقايق
+    const val WARN_MS = 10 * 60_000L                        // أحمر قبل الصلاة بـ 10 دقايق
 
     private fun textPaint(size: Float, bold: Boolean, color: Int, align: Paint.Align): Paint {
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -57,6 +58,9 @@ object WidgetRenderer {
         p.addRoundRect(rect, floatArrayOf(tl, tl, tr, tr, br, br, bl, bl), Path.Direction.CW)
         return p
     }
+
+    /** عرض الدايرة عند بُعد dy من المركز */
+    private fun chord(r: Float, dy: Float): Float = 2f * sqrt(max(0f, r * r - dy * dy))
 
     private fun fullRing(cx: Float, cy: Float, outerR: Float, innerR: Float): Path {
         val p = Path()
@@ -142,7 +146,7 @@ object WidgetRenderer {
         val cx = r.centerX()
         val cy = r.centerY()
         val outerR = r.width() / 2f
-        val innerR = outerR * 0.74f
+        val innerR = outerR * 0.80f
         val outer = RectF(cx - outerR, cy - outerR, cx + outerR, cy + outerR)
         val inner = RectF(cx - innerR, cy - innerR, cx + innerR, cy + innerR)
 
@@ -212,19 +216,20 @@ object WidgetRenderer {
         c.drawCircle(cx, cy, outerR, rim)
         c.drawCircle(cx, cy, innerR, rim)
 
-        // ----- النص جوه الدايرة -----
-        val numSize = innerR * 0.50f
-        val apSize = numSize * 0.42f
-        val nameSize = innerR * 0.20f
-        val remSize = innerR * 0.24f
+        // ----- النص جوه الدايرة (كبير عشان يبان من أول نظرة) -----
+        val rr = innerR
 
         // اسم الصلاة
-        c.drawText(
-            "صلاة " + next.prayer.ar, cx, cy - numSize * 0.85f,
-            textPaint(nameSize, false, NAVY, Paint.Align.CENTER)
+        val nameText = "صلاة " + next.prayer.ar
+        val nameBase = cy - rr * 0.46f
+        val namePaint = fit(
+            nameText, rr * 0.30f, chord(rr, rr * 0.70f) * 0.92f, true, NAVY, Paint.Align.CENTER
         )
+        c.drawText(nameText, cx, nameBase, namePaint)
 
         // وقت الأذان: الرقم الكبير
+        val numSize = rr * 0.44f
+        val apSize = numSize * 0.42f
         val num = Fmt.clock(next.time)
         val ap = Fmt.ampm(next.time)
         val numPaint = textPaint(numSize, true, NAVY, Paint.Align.LEFT)
@@ -232,20 +237,35 @@ object WidgetRenderer {
         val gap = numSize * 0.12f
         val total = numPaint.measureText(num) + gap + apPaint.measureText(ap)
         val x0 = cx - total / 2f
-        val numBase = cy + numSize * 0.12f
+        val numBase = cy + rr * 0.02f
         c.drawText(num, x0, numBase, numPaint)
         c.drawText(ap, x0 + numPaint.measureText(num) + gap, numBase, apPaint)
 
-        // الوقت المتبقي بالأصفر داخل كبسولة كحلي
-        val remText = "باقي " + Fmt.hm(remaining)
-        val remPaint = textPaint(remSize, true, YELLOW, Paint.Align.CENTER)
-        val remBase = numBase + remSize * 1.7f
-        val pw = remPaint.measureText(remText) + remSize * 0.9f
-        val pill = RectF(cx - pw / 2f, remBase - remSize * 1.2f, cx + pw / 2f, remBase + remSize * 0.55f)
+        // الوقت المتبقي بالأصفر داخل كبسولة كحلي: "باقي 2:35"
+        val timeStr = Fmt.hm(remaining)
+        val label = "باقي"
+        val timeSize = rr * 0.36f
+        val labelSize = rr * 0.20f
+        val timePaint = textPaint(timeSize, true, YELLOW, Paint.Align.LEFT)
+        val labelPaint = textPaint(labelSize, true, YELLOW, Paint.Align.LEFT)
+        val padX = rr * 0.14f
+        val avail = chord(rr, rr * 0.64f) * 0.94f - 2f * padX
+        val w0 = timePaint.measureText(timeStr) + rr * 0.08f + labelPaint.measureText(label)
+        val f = if (w0 > avail && avail > 0f) avail / w0 else 1f
+        timePaint.textSize = timeSize * f
+        labelPaint.textSize = labelSize * f
+        val gapR = rr * 0.08f * f
+        val contentW = timePaint.measureText(timeStr) + gapR + labelPaint.measureText(label)
+        val pillH = timePaint.textSize * 1.5f
+        val pillTop = cy + rr * 0.10f
+        val pill = RectF(cx - contentW / 2f - padX, pillTop, cx + contentW / 2f + padX, pillTop + pillH)
         val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         pillPaint.color = NAVY
-        c.drawRoundRect(pill, pill.height() / 2f, pill.height() / 2f, pillPaint)
-        c.drawText(remText, cx, remBase, remPaint)
+        c.drawRoundRect(pill, pillH / 2f, pillH / 2f, pillPaint)
+        val pillBase = pillTop + pillH / 2f + timePaint.textSize * 0.36f
+        val tx = cx - contentW / 2f
+        c.drawText(timeStr, tx, pillBase, timePaint)
+        c.drawText(label, tx + timePaint.measureText(timeStr) + gapR, pillBase, labelPaint)
     }
 
     private fun drawPanel(

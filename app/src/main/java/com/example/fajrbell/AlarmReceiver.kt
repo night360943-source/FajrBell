@@ -12,5 +12,6 @@ class AlarmReceiver : BroadcastReceiver() {
         ContextCompat.startForegroundService(context, svc)
         FajrScheduler.schedule(context) // جدول الجرس اللي بعده
         PrayerWidgetProvider.refreshAll(context)
+        if (PrayerWidgetProvider.hasWidgets(context)) PrayerWidgetProvider.scheduleTick(context)
     }
 }

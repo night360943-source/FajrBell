@@ -36,12 +36,18 @@ class PrayerWidgetProvider : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
         if (intent.action == ACTION_TICK) {
+            // كل مرة: حدّث الودجت وجدول اللي بعده (ده كمان بيصلّح أي سلسلة اتقطعت)
             if (refreshAll(context)) scheduleTick(context)
         }
     }
 
     companion object {
         const val ACTION_TICK = "com.example.fajrbell.WIDGET_TICK"
+
+        fun hasWidgets(context: Context): Boolean {
+            val mgr = AppWidgetManager.getInstance(context)
+            return mgr.getAppWidgetIds(ComponentName(context, PrayerWidgetProvider::class.java)).isNotEmpty()
+        }
 
         /** بيحدّث كل الودجتس. بيرجع true لو فيه ودجت موجود */
         fun refreshAll(context: Context): Boolean {
@@ -87,31 +93,52 @@ class PrayerWidgetProvider : AppWidgetProvider() {
             }
         }
 
-        private fun tickIntent(context: Context): PendingIntent {
+        private fun pending(context: Context, code: Int): PendingIntent {
             val i = Intent(context, PrayerWidgetProvider::class.java).setAction(ACTION_TICK)
             return PendingIntent.getBroadcast(
-                context, 77, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                context, code, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         }
 
-        /** تحديث الودجت كل دقيقة */
-        fun scheduleTick(context: Context) {
-            val am = context.getSystemService(AlarmManager::class.java)
-            val t = (System.currentTimeMillis() / 60_000L + 1) * 60_000L + 300L
-            val pi = tickIntent(context)
+        /** منبه بيصحّي التليفون حتى لو نايم (بيتأخر بس في Doze العميق) */
+        private fun setWake(context: Context, am: AlarmManager, t: Long, pi: PendingIntent) {
             try {
                 if (FajrScheduler.canSchedule(context)) {
-                    am.setExactAndAllowWhileIdle(AlarmManager.RTC, t, pi)
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, t, pi)
                 } else {
-                    am.setAndAllowWhileIdle(AlarmManager.RTC, t, pi)
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, t, pi)
                 }
             } catch (e: SecurityException) {
-                am.set(AlarmManager.RTC, t, pi)
+                am.set(AlarmManager.RTC_WAKEUP, t, pi)
+            }
+        }
+
+        /**
+         * بيجدول حاجتين:
+         * 1) تحديث كل دقيقة
+         * 2) تحديث دقيق عند الموعد المهم الجاي (10 دقايق قبل الأذان، أو الأذان نفسه)
+         */
+        fun scheduleTick(context: Context) {
+            val am = context.getSystemService(AlarmManager::class.java)
+            val now = System.currentTimeMillis()
+
+            val nextMinute = (now / 60_000L + 1) * 60_000L + 300L
+            setWake(context, am, nextMinute, pending(context, 77))
+
+            try {
+                val adhan = FajrScheduler.window(now).second.time.time
+                val warn = adhan - WidgetRenderer.WARN_MS
+                val key = if (warn > now + 1000L) warn else adhan
+                setWake(context, am, key + 200L, pending(context, 78))
+            } catch (e: Exception) {
+                // مش مشكلة، التحديث كل دقيقة شغال
             }
         }
 
         fun cancelTick(context: Context) {
-            context.getSystemService(AlarmManager::class.java).cancel(tickIntent(context))
+            val am = context.getSystemService(AlarmManager::class.java)
+            am.cancel(pending(context, 77))
+            am.cancel(pending(context, 78))
         }
     }
 }

@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
 import android.view.Gravity
@@ -38,6 +39,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var adhanText: TextView
     private lateinit var durationText: TextView
     private lateinit var dateText: TextView
+    private lateinit var batteryText: TextView
     private lateinit var toggle: Button
 
     private val rows = LinkedHashMap<Prayer, Row>()
@@ -100,6 +102,7 @@ class MainActivity : AppCompatActivity() {
         bellText = label(14f)
         durationText = label(17f)
         dateText = label(16f)
+        batteryText = label(15f)
 
         toggle = btn("") {
             if (Prefs.enabled(this)) {
@@ -143,6 +146,11 @@ class MainActivity : AppCompatActivity() {
             "−1 يوم" to { changeHijri(-1) }, "+1 يوم" to { changeHijri(1) }
         ))
 
+        // ----- البطارية -----
+        root.addView(title("🔋 عشان الجرس والودجت ما يتوقفوش"))
+        root.addView(batteryText)
+        root.addView(btn("السماح للتطبيق بالعمل في الخلفية") { askBatteryWhitelist() })
+
         // ----- مدة الرنين -----
         root.addView(title("⏱ مدة الرنين (لكل الصلوات)"))
         root.addView(durationText)
@@ -166,6 +174,7 @@ class MainActivity : AppCompatActivity() {
             waitingForPermission = false
         }
         refresh()
+        if (PrayerWidgetProvider.hasWidgets(this)) PrayerWidgetProvider.scheduleTick(this)
         handler.post(ticker)
     }
 
@@ -259,6 +268,27 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    private fun isWhitelisted(): Boolean {
+        val pm = getSystemService(PowerManager::class.java)
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun askBatteryWhitelist() {
+        if (isWhitelisted()) {
+            Toast.makeText(this, "مسموح بالفعل ✅", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            startActivity(
+                Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+            )
+        } catch (_: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+            } catch (_: Exception) { }
+        }
+    }
+
     private fun tryEnable() {
         if (FajrScheduler.schedule(this)) {
             Prefs.setEnabled(this, true)
@@ -341,6 +371,8 @@ class MainActivity : AppCompatActivity() {
         dateText.text = Fmt.hijri(Prefs.hijriAdjust(this)) + " هـ   |   " + Fmt.gregorian() +
             "\nلو التاريخ الهجري مختلف يوم عندك، عدّله بالأزرار"
         durationText.text = "مدة الرنين: " + Prefs.duration(this) + " ثانية"
+        batteryText.text = if (isWhitelisted()) "✅ مسموح للتطبيق بالعمل في الخلفية"
+        else "⚠️ غير مسموح: الودجت ممكن يقف لما التليفون يتقفل. اضغط الزرار تحت"
         PrayerWidgetProvider.refreshAll(this)
     }
 
