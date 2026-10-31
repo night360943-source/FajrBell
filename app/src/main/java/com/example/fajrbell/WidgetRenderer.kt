@@ -7,30 +7,33 @@ import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PathMeasure
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
+import java.util.Date
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.sqrt
 
 /**
  * بيرسم الودجت كله كصورة:
- * فوق (لبني): التاريخ الهجري والميلادي + الدايرة. تحت (رصاصي): مواعيد الصلوات.
+ * فوق (أزرق): التاريخ + مستطيل فيه (الساعة الآن، الصلاة القادمة ووقتها، المتبقي).
+ * تحت (رصاصي): مواعيد الصلوات الخمس.
  */
 object WidgetRenderer {
 
     // ===== الألوان (تقدر تغيّرها) =====
-    private val BABY_TOP = Color.parseColor("#1F6599")      // خارج الدايرة: نفس كحلي كبسولة "باقي" بس أفتح شوية
-    private val BABY_BOTTOM = Color.parseColor("#18527F")
-    private val PANEL_TOP = Color.parseColor("#7B848C")     // الرصاصي تحت
-    private val PANEL_BOTTOM = Color.parseColor("#59626A")
-    private val NAVY = Color.parseColor("#0B3A5B")          // نصوص فوق
-    private val BLUE = Color.parseColor("#4C9FD6")          // التهشير: نفس أزرق الخلفية (أغمق شوية عشان يبان)
-    private val TRACK = Color.argb(235, 46, 53, 59)         // الرصاصي الغامق
-    private val RED = Color.parseColor("#E53935")           // تنبيه
-    private val RED_TRACK = Color.argb(235, 211, 47, 47)
-    private val YELLOW = Color.parseColor("#FFD60A")        // الوقت المتبقي
+    private val SKY_TOP = Color.parseColor("#1F6599")       // الخلفية الزرقا فوق
+    private val SKY_BOTTOM = Color.parseColor("#18527F")
+    private val PANEL_TOP = Color.parseColor("#6C757D")     // الشريط الرصاصي تحت
+    private val PANEL_BOTTOM = Color.parseColor("#535B62")
+    private val NAVY = Color.parseColor("#0B3A5B")          // النصوص جوه المستطيل
+    private val NAVY_SOFT = Color.parseColor("#4A6A85")
+    private val FRAME_GRAY = Color.parseColor("#7B848C")    // الوقت المتبقي (رصاصي)
+    private val FRAME_BLUE = Color.parseColor("#9AD3F3")    // الوقت اللي عدى (لبني سادة)
+    private val RED = Color.parseColor("#E53935")           // تنبيه قرب الصلاة
+    private val YELLOW = Color.parseColor("#FFD60A")
+    private val DIVIDER = Color.parseColor("#D3DEE9")
     const val WARN_MS = 10 * 60_000L                        // أحمر قبل الصلاة بـ 10 دقايق
 
     private fun textPaint(size: Float, bold: Boolean, color: Int, align: Paint.Align): Paint {
@@ -59,17 +62,6 @@ object WidgetRenderer {
         return p
     }
 
-    /** عرض الدايرة عند بُعد dy من المركز */
-    private fun chord(r: Float, dy: Float): Float = 2f * sqrt(max(0f, r * r - dy * dy))
-
-    private fun fullRing(cx: Float, cy: Float, outerR: Float, innerR: Float): Path {
-        val p = Path()
-        p.fillType = Path.FillType.EVEN_ODD
-        p.addCircle(cx, cy, outerR, Path.Direction.CW)
-        p.addCircle(cx, cy, innerR, Path.Direction.CW)
-        return p
-    }
-
     fun render(context: Context, w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -90,18 +82,18 @@ object WidgetRenderer {
         val pad = min(wf, hf) * 0.045f
         val corner = min(wf, hf) * 0.09f
 
-        val showPanel = hDp >= 130f      // لو أقصر من كده: دايرة بس
+        val showPanel = hDp >= 130f      // لو أقصر من كده: المستطيل بس
         val useColumns = wDp >= 200f     // عريض: الصلوات في صف، ضيق: في عمود
         val panelH = when {
             !showPanel -> 0f
-            useColumns -> (hf * 0.30f).coerceIn(38f * density, 84f * density)
+            useColumns -> (hf * 0.27f).coerceIn(36f * density, 80f * density)
             else -> hf * 0.40f
         }
         val topH = hf - panelH
 
-        // ----- المنطقة اللبني (فوق) -----
+        // ----- المنطقة الزرقا (فوق) -----
         val topPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-        topPaint.shader = LinearGradient(0f, 0f, 0f, topH, BABY_TOP, BABY_BOTTOM, Shader.TileMode.CLAMP)
+        topPaint.shader = LinearGradient(0f, 0f, 0f, topH, SKY_TOP, SKY_BOTTOM, Shader.TileMode.CLAMP)
         val topRect = RectF(0f, 0f, wf, topH)
         if (showPanel) {
             c.drawPath(roundedPath(topRect, corner, corner, 0f, 0f), topPaint)
@@ -117,7 +109,7 @@ object WidgetRenderer {
         }
 
         // ----- التاريخ: هجري على الشمال وميلادي على اليمين -----
-        val headerH = (hf * 0.105f).coerceIn(13f * density, 24f * density)
+        val headerH = (hf * 0.105f).coerceIn(13f * density, 22f * density)
         val dateSize = headerH * 0.62f
         val half = (wf - 3f * pad) / 2f
         val hijri = Fmt.hijri(Prefs.hijriAdjust(context))
@@ -126,146 +118,185 @@ object WidgetRenderer {
         c.drawText(hijri, pad * 1.6f, dateBase, fit(hijri, dateSize, half, true, Color.WHITE, Paint.Align.LEFT))
         c.drawText(greg, wf - pad * 1.6f, dateBase, fit(greg, dateSize, half, false, Color.WHITE, Paint.Align.RIGHT))
 
-        // ----- الدايرة -----
-        val ringTop = pad * 0.6f + headerH + pad * 0.4f
-        val ringBottom = topH - pad
-        val side = min(ringBottom - ringTop, wf - 2f * pad).coerceAtLeast(40f)
-        val left = (wf - side) / 2f
-        drawRing(c, RectF(left, ringTop, left + side, ringTop + side), progress, remaining, next)
+        // ----- المستطيل -----
+        val cardTop = pad * 0.6f + headerH + pad * 0.4f
+        val cardBottom = topH - pad
+        val card = RectF(pad, cardTop, wf - pad, max(cardBottom, cardTop + 40f))
+        drawCard(c, card, progress, remaining, next, now, density)
 
-        // ----- مواعيد الصلوات تحت الدايرة -----
+        // ----- مواعيد الصلوات تحت المستطيل -----
         if (showPanel) {
             drawPanel(c, RectF(0f, topH, wf, hf), pad, useColumns, next, now)
         }
         return bmp
     }
 
-    private fun drawRing(
-        c: Canvas, r: RectF, progress: Float, remaining: Long, next: FajrScheduler.Slot
+    /** رقم الساعة كبير + ص/م صغيرة، في النص */
+    private fun drawTime(
+        c: Canvas, num: String, ap: String, cx: Float, base: Float,
+        numSize: Float, color: Int, maxW: Float
     ) {
-        val cx = r.centerX()
-        val cy = r.centerY()
-        val outerR = r.width() / 2f
-        val innerR = outerR * 0.80f
-        val outer = RectF(cx - outerR, cy - outerR, cx + outerR, cy + outerR)
-        val inner = RectF(cx - innerR, cy - innerR, cx + innerR, cy + innerR)
+        var ns = numSize
+        var aps = ns * 0.45f
+        val numP = textPaint(ns, true, color, Paint.Align.LEFT)
+        val apP = textPaint(aps, true, color, Paint.Align.LEFT)
+        var gap = ns * 0.12f
+        var total = numP.measureText(num) + gap + apP.measureText(ap)
+        if (maxW > 0f && total > maxW) {
+            val f = maxW / total
+            ns *= f
+            aps *= f
+            gap *= f
+            numP.textSize = ns
+            apP.textSize = aps
+            total = numP.measureText(num) + gap + apP.measureText(ap)
+        }
+        val x0 = cx - total / 2f
+        c.drawText(num, x0, base, numP)
+        c.drawText(ap, x0 + numP.measureText(num) + gap, base, apP)
+    }
 
+    private fun drawCard(
+        c: Canvas, r: RectF, progress: Float, remaining: Long,
+        next: FajrScheduler.Slot, nowMs: Long, density: Float
+    ) {
         val warn = remaining <= WARN_MS
-        val trackColor = if (warn) RED_TRACK else TRACK
-        val hatchColor = if (warn) RED else BLUE
+        val grayC = if (warn) RED else FRAME_GRAY
+        val blueC = if (warn) RED else FRAME_BLUE
 
-        // جوه الدايرة: أبيض مصمت بلون واحد
-        val disc = Paint(Paint.ANTI_ALIAS_FLAG)
-        disc.color = Color.WHITE
-        c.drawCircle(cx, cy, innerR, disc)
+        val t = max(4f, r.height() * 0.07f)                       // سمك الإطار
+        val rOuter = min(r.width(), r.height()) * 0.14f
 
-        // الجزء اللي لسه ماعداش: رصاصي شفاف مصمت (من غير تهشير)
-        val solid = Paint(Paint.ANTI_ALIAS_FLAG)
-        solid.color = trackColor
-        solid.style = Paint.Style.FILL
-        if (progress < 0.002f) {
-            c.drawPath(fullRing(cx, cy, outerR, innerR), solid)
-        } else if (progress < 0.999f) {
-            val sweep = 360f * progress
+        // الخلفية البيضا جوه الإطار
+        val inner = RectF(r.left + t, r.top + t, r.right - t, r.bottom - t)
+        val rin = max(2f, rOuter - t)
+        val whitePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+        whitePaint.color = Color.WHITE
+        c.drawRoundRect(inner, rin, rin, whitePaint)
+
+        // مسار الإطار: يبدأ من منتصف الحافة العلوية مع عقارب الساعة
+        val h2 = t / 2f
+        val r2 = RectF(r.left + h2, r.top + h2, r.right - h2, r.bottom - h2)
+        val rr = max(2f, rOuter - h2)
+        val path = Path()
+        path.moveTo(r2.centerX(), r2.top)
+        path.lineTo(r2.right - rr, r2.top)
+        path.arcTo(RectF(r2.right - 2f * rr, r2.top, r2.right, r2.top + 2f * rr), -90f, 90f)
+        path.lineTo(r2.right, r2.bottom - rr)
+        path.arcTo(RectF(r2.right - 2f * rr, r2.bottom - 2f * rr, r2.right, r2.bottom), 0f, 90f)
+        path.lineTo(r2.left + rr, r2.bottom)
+        path.arcTo(RectF(r2.left, r2.bottom - 2f * rr, r2.left + 2f * rr, r2.bottom), 90f, 90f)
+        path.lineTo(r2.left, r2.top + rr)
+        path.arcTo(RectF(r2.left, r2.top, r2.left + 2f * rr, r2.top + 2f * rr), 180f, 90f)
+        path.lineTo(r2.centerX(), r2.top)
+
+        val sp = Paint(Paint.ANTI_ALIAS_FLAG)
+        sp.style = Paint.Style.STROKE
+        sp.strokeWidth = t
+        sp.strokeCap = Paint.Cap.BUTT
+        val pm = PathMeasure(path, false)
+        val len = pm.length
+        val el = len * progress
+        if (progress >= 0.999f) {
+            // الوقت كله عدى: الإطار كله لبني
+            sp.color = blueC
+            c.drawPath(path, sp)
+        } else {
+            if (el > 0.5f) {
+                val seg = Path()
+                pm.getSegment(0f, el, seg, true)
+                sp.color = blueC
+                c.drawPath(seg, sp)
+            }
             val rest = Path()
-            rest.arcTo(outer, -90f + sweep, 360f - sweep)
-            rest.arcTo(inner, 270f, -(360f - sweep))
-            rest.close()
-            c.drawPath(rest, solid)
+            pm.getSegment(el, len, rest, true)
+            sp.color = grayC
+            c.drawPath(rest, sp)
         }
 
-        // الجزء اللي عدى: تهشير أزرق (بينه فراغات شفافة)
-        if (progress > 0.002f) {
-            val elapsed: Path
-            if (progress >= 0.999f) {
-                elapsed = fullRing(cx, cy, outerR, innerR)
-            } else {
-                val sweep = 360f * progress
-                elapsed = Path()
-                elapsed.arcTo(outer, -90f, sweep)
-                elapsed.arcTo(inner, -90f + sweep, -sweep)
-                elapsed.close()
-            }
+        // ----- المحتوى جوه المستطيل -----
+        val iw = inner.width()
+        val ih = inner.height()
+        val cx = inner.centerX()
+        val top = inner.top
 
-            c.save()
-            c.clipPath(elapsed)
-            val hatch = Paint(Paint.ANTI_ALIAS_FLAG)
-            hatch.color = hatchColor
-            hatch.style = Paint.Style.STROKE
-            hatch.strokeWidth = max(2f, outerR * 0.045f)
-            val step = max(6f, outerR * 0.12f)
-            var x = cx - outerR * 3f
-            while (x < cx + outerR) {
-                c.drawLine(x, cy + outerR, x + outerR * 2f, cy - outerR, hatch)
-                x += step
-            }
-            c.restore()
-
-            val edge = Paint(Paint.ANTI_ALIAS_FLAG)
-            edge.color = hatchColor
-            edge.style = Paint.Style.STROKE
-            edge.strokeWidth = max(1.5f, outerR * 0.018f)
-            c.drawPath(elapsed, edge)
+        // 1) الساعة الآن
+        if (ih / density >= 95f) {
+            c.drawText(
+                "الساعة الآن", cx, top + ih * 0.085f,
+                textPaint(ih * 0.075f, true, NAVY_SOFT, Paint.Align.CENTER)
+            )
         }
-
-        // حافة بيضا رفيعة بره وجوه الدايرة
-        val rim = Paint(Paint.ANTI_ALIAS_FLAG)
-        rim.style = Paint.Style.STROKE
-        rim.color = Color.argb(230, 255, 255, 255)
-        rim.strokeWidth = max(1.5f, outerR * 0.028f)
-        c.drawCircle(cx, cy, outerR, rim)
-        c.drawCircle(cx, cy, innerR, rim)
-
-        // ----- النص جوه الدايرة (كبير عشان يبان من أول نظرة) -----
-        val rr = innerR
-
-        // اسم الصلاة
-        val nameText = "صلاة " + next.prayer.ar
-        val nameBase = cy - rr * 0.46f
-        val namePaint = fit(
-            nameText, rr * 0.30f, chord(rr, rr * 0.70f) * 0.92f, true, NAVY, Paint.Align.CENTER
+        val nowDate = Date(nowMs)
+        drawTime(
+            c, Fmt.clock(nowDate), Fmt.ampm(nowDate), cx, top + ih * 0.33f,
+            ih * 0.26f, NAVY, iw * 0.9f
         )
-        c.drawText(nameText, cx, nameBase, namePaint)
 
-        // وقت الأذان: الرقم الكبير
-        val numSize = rr * 0.44f
-        val apSize = numSize * 0.42f
+        // فاصل رفيع
+        val line = Paint(Paint.ANTI_ALIAS_FLAG)
+        line.color = DIVIDER
+        line.strokeWidth = max(1f, density)
+        c.drawLine(cx - iw * 0.4f, top + ih * 0.385f, cx + iw * 0.4f, top + ih * 0.385f, line)
+
+        // 2) الصلاة القادمة ووقت أذانها: الاسم على اليمين والوقت على الشمال
+        val nameText = "صلاة " + next.prayer.ar
         val num = Fmt.clock(next.time)
         val ap = Fmt.ampm(next.time)
-        val numPaint = textPaint(numSize, true, NAVY, Paint.Align.LEFT)
-        val apPaint = textPaint(apSize, true, NAVY, Paint.Align.LEFT)
-        val gap = numSize * 0.12f
-        val total = numPaint.measureText(num) + gap + apPaint.measureText(ap)
-        val x0 = cx - total / 2f
-        val numBase = cy + rr * 0.02f
-        c.drawText(num, x0, numBase, numPaint)
-        c.drawText(ap, x0 + numPaint.measureText(num) + gap, numBase, apPaint)
+        var tSize = ih * 0.22f
+        var nSize = tSize * 0.78f
+        var aSize = tSize * 0.45f
+        val nameP = textPaint(nSize, true, NAVY, Paint.Align.LEFT)
+        val numP = textPaint(tSize, true, NAVY, Paint.Align.LEFT)
+        val apP = textPaint(aSize, true, NAVY, Paint.Align.LEFT)
+        var gapName = tSize * 0.35f
+        var gapAp = tSize * 0.12f
+        var total = numP.measureText(num) + gapAp + apP.measureText(ap) + gapName + nameP.measureText(nameText)
+        val maxW = iw * 0.94f
+        if (total > maxW) {
+            val f = maxW / total
+            tSize *= f; nSize *= f; aSize *= f; gapName *= f; gapAp *= f
+            nameP.textSize = nSize
+            numP.textSize = tSize
+            apP.textSize = aSize
+            total = numP.measureText(num) + gapAp + apP.measureText(ap) + gapName + nameP.measureText(nameText)
+        }
+        val base2 = top + ih * 0.62f
+        val xNum = cx - total / 2f
+        val xAp = xNum + numP.measureText(num) + gapAp
+        val xName = xAp + apP.measureText(ap) + gapName
+        c.drawText(num, xNum, base2, numP)
+        c.drawText(ap, xAp, base2, apP)
+        c.drawText(nameText, xName, base2, nameP)
 
-        // الوقت المتبقي بالأصفر داخل كبسولة كحلي: "باقي 2:35"
+        // 3) المتبقي بالأصفر داخل كبسولة كحلي: "باقي 2:07"
         val timeStr = Fmt.hm(remaining)
         val label = "باقي"
-        val timeSize = rr * 0.36f
-        val labelSize = rr * 0.20f
-        val timePaint = textPaint(timeSize, true, YELLOW, Paint.Align.LEFT)
-        val labelPaint = textPaint(labelSize, true, YELLOW, Paint.Align.LEFT)
-        val padX = rr * 0.14f
-        val avail = chord(rr, rr * 0.64f) * 0.94f - 2f * padX
-        val w0 = timePaint.measureText(timeStr) + rr * 0.08f + labelPaint.measureText(label)
-        val f = if (w0 > avail && avail > 0f) avail / w0 else 1f
-        timePaint.textSize = timeSize * f
-        labelPaint.textSize = labelSize * f
-        val gapR = rr * 0.08f * f
-        val contentW = timePaint.measureText(timeStr) + gapR + labelPaint.measureText(label)
-        val pillH = timePaint.textSize * 1.5f
-        val pillTop = cy + rr * 0.10f
+        var pillH = ih * 0.29f
+        var timeSize = pillH * 0.62f
+        var labelSize = timeSize * 0.55f
+        val timeP = textPaint(timeSize, true, YELLOW, Paint.Align.LEFT)
+        val labelP = textPaint(labelSize, true, YELLOW, Paint.Align.LEFT)
+        var gapR = timeSize * 0.3f
+        var padX = pillH * 0.55f
+        var contentW = timeP.measureText(timeStr) + gapR + labelP.measureText(label)
+        val maxPill = iw * 0.92f
+        if (contentW + 2f * padX > maxPill) {
+            val f = maxPill / (contentW + 2f * padX)
+            timeSize *= f; labelSize *= f; gapR *= f; padX *= f; pillH *= f
+            timeP.textSize = timeSize
+            labelP.textSize = labelSize
+            contentW = timeP.measureText(timeStr) + gapR + labelP.measureText(label)
+        }
+        val pillTop = top + ih * 0.68f
         val pill = RectF(cx - contentW / 2f - padX, pillTop, cx + contentW / 2f + padX, pillTop + pillH)
         val pillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
         pillPaint.color = NAVY
         c.drawRoundRect(pill, pillH / 2f, pillH / 2f, pillPaint)
-        val pillBase = pillTop + pillH / 2f + timePaint.textSize * 0.36f
+        val pillBase = pillTop + pillH / 2f + timeSize * 0.36f
         val tx = cx - contentW / 2f
-        c.drawText(timeStr, tx, pillBase, timePaint)
-        c.drawText(label, tx + timePaint.measureText(timeStr) + gapR, pillBase, labelPaint)
+        c.drawText(timeStr, tx, pillBase, timeP)
+        c.drawText(label, tx + timeP.measureText(timeStr) + gapR, pillBase, labelP)
     }
 
     private fun drawPanel(
@@ -295,7 +326,7 @@ object WidgetRenderer {
                         ph * 0.2f, ph * 0.2f, hi
                     )
                 }
-                val alpha = if (t.time < now) 150 else 255
+                val alpha = if (t.time < now) 170 else 255
                 val col = if (isNext) YELLOW else Color.argb(alpha, 255, 255, 255)
 
                 c.drawText(p.ar, cx, r.top + ph * 0.40f, textPaint(nameSz, isNext, col, Paint.Align.CENTER))
@@ -329,7 +360,7 @@ object WidgetRenderer {
                         rowH * 0.25f, rowH * 0.25f, hi
                     )
                 }
-                val alpha = if (t.time < now) 150 else 255
+                val alpha = if (t.time < now) 170 else 255
                 val col = if (isNext) YELLOW else Color.argb(alpha, 255, 255, 255)
                 val base = top + rowH / 2f + size * 0.35f
                 c.drawText(
