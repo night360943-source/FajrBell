@@ -1,6 +1,7 @@
 package com.example.fajrbell
 
 import android.Manifest
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
@@ -40,6 +41,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var durationText: TextView
     private lateinit var dateText: TextView
     private lateinit var batteryText: TextView
+    private lateinit var keepText: TextView
+    private lateinit var keepButton: Button
     private lateinit var toggle: Button
 
     private val rows = LinkedHashMap<Prayer, Row>()
@@ -103,6 +106,7 @@ class MainActivity : AppCompatActivity() {
         durationText = label(17f)
         dateText = label(16f)
         batteryText = label(15f)
+        keepText = label(15f)
 
         toggle = btn("") {
             if (Prefs.enabled(this)) {
@@ -150,6 +154,11 @@ class MainActivity : AppCompatActivity() {
         root.addView(title("🔋 عشان الجرس والودجت ما يتوقفوش"))
         root.addView(batteryText)
         root.addView(btn("السماح للتطبيق بالعمل في الخلفية") { askBatteryWhitelist() })
+        root.addView(btn("فتح التشغيل التلقائي (Xiaomi)") { openAutostart() })
+        root.addView(btn("فتح توفير البطارية للتطبيق (Xiaomi)") { openXiaomiBattery() })
+        root.addView(keepText)
+        keepButton = btn("") { toggleKeepAlive() }
+        root.addView(keepButton)
 
         // ----- مدة الرنين -----
         root.addView(title("⏱ مدة الرنين (لكل الصلوات)"))
@@ -175,6 +184,7 @@ class MainActivity : AppCompatActivity() {
         }
         refresh()
         if (PrayerWidgetProvider.hasWidgets(this)) PrayerWidgetProvider.scheduleTick(this)
+        if (Prefs.keepAlive(this)) KeepAliveService.start(this)
         handler.post(ticker)
     }
 
@@ -266,6 +276,55 @@ class MainActivity : AppCompatActivity() {
                 }
             }
             .show()
+    }
+
+    private fun openAppDetails() {
+        try {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+            )
+        } catch (_: Exception) { }
+    }
+
+    /** صفحة التشغيل التلقائي في Xiaomi/Redmi */
+    private fun openAutostart() {
+        try {
+            startActivity(
+                Intent().setComponent(
+                    ComponentName(
+                        "com.miui.securitycenter",
+                        "com.miui.permcenter.autostart.AutoStartManagementActivity"
+                    )
+                )
+            )
+        } catch (_: Exception) {
+            openAppDetails()
+        }
+    }
+
+    /** صفحة توفير البطارية للتطبيق في Xiaomi/Redmi */
+    private fun openXiaomiBattery() {
+        try {
+            startActivity(
+                Intent().setComponent(
+                    ComponentName(
+                        "com.miui.powerkeeper",
+                        "com.miui.powerkeeper.ui.HiddenAppsConfigActivity"
+                    )
+                )
+                    .putExtra("package_name", packageName)
+                    .putExtra("package_label", "جرس الصلاة")
+            )
+        } catch (_: Exception) {
+            openAppDetails()
+        }
+    }
+
+    private fun toggleKeepAlive() {
+        val on = !Prefs.keepAlive(this)
+        Prefs.setKeepAlive(this, on)
+        if (on) KeepAliveService.start(this) else KeepAliveService.stop(this)
+        refresh()
     }
 
     private fun isWhitelisted(): Boolean {
@@ -373,6 +432,10 @@ class MainActivity : AppCompatActivity() {
         durationText.text = "مدة الرنين: " + Prefs.duration(this) + " ثانية"
         batteryText.text = if (isWhitelisted()) "✅ مسموح للتطبيق بالعمل في الخلفية"
         else "⚠️ غير مسموح: الودجت ممكن يقف لما التليفون يتقفل. اضغط الزرار تحت"
+        val ka = Prefs.keepAlive(this)
+        keepText.text = if (ka) "✅ التشغيل المستمر شغال (إشعار ثابت بيحافظ على التطبيق حي)"
+        else "التشغيل المستمر متوقف"
+        keepButton.text = if (ka) "إيقاف التشغيل المستمر" else "تشغيل التشغيل المستمر (موصى به لـ Xiaomi)"
         PrayerWidgetProvider.refreshAll(this)
     }
 

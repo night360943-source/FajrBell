@@ -41,4 +41,8 @@ object Prefs {
     /** تعديل التاريخ الهجري بالأيام (لو اختلف يوم عن دار الإفتاء) */
     fun hijriAdjust(c: Context) = sp(c).getInt("hijri_adjust", 0)
     fun setHijriAdjust(c: Context, v: Int) = sp(c).edit().putInt("hijri_adjust", v).apply()
+
+    /** التشغيل المستمر (إشعار ثابت بيحافظ على التطبيق حي) */
+    fun keepAlive(c: Context) = sp(c).getBoolean("keep_alive", false)
+    fun setKeepAlive(c: Context, v: Boolean) = sp(c).edit().putBoolean("keep_alive", v).apply()
 }
