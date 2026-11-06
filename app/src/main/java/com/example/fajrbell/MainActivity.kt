@@ -1,6 +1,7 @@
 package com.example.fajrbell
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -47,6 +48,9 @@ class MainActivity : AppCompatActivity() {
 
     private val rows = LinkedHashMap<Prayer, Row>()
     private var pendingPrayer: Prayer? = null
+    private var pendingAll = false
+    private lateinit var allSoundText: TextView
+    private lateinit var fullScreenText: TextView
     private var waitingForPermission = false
 
     private val handler = Handler(Looper.getMainLooper())
@@ -59,29 +63,25 @@ class MainActivity : AppCompatActivity() {
 
     private val ringtonePicker =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-            val p = pendingPrayer
-            if (p != null && r.resultCode == RESULT_OK) {
+            if (r.resultCode == RESULT_OK) {
                 val uri: Uri? = if (Build.VERSION.SDK_INT >= 33)
                     r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java)
                 else
                     @Suppress("DEPRECATION")
                     r.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-                Prefs.setSound(this, p, uri?.toString())
-                refresh()
+                applySound(uri?.toString())
             }
         }
 
     private val filePicker =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            val p = pendingPrayer
-            if (uri != null && p != null) {
+            if (uri != null) {
                 try {
                     contentResolver.takePersistableUriPermission(
                         uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
                     )
                 } catch (_: Exception) { }
-                Prefs.setSound(this, p, uri.toString())
-                refresh()
+                applySound(uri.toString())
             }
         }
 
@@ -91,6 +91,7 @@ class MainActivity : AppCompatActivity() {
         savedInstanceState?.getString("pp")?.let {
             try { pendingPrayer = Prayer.valueOf(it) } catch (_: Exception) { }
         }
+        pendingAll = savedInstanceState?.getBoolean("pall", false) ?: false
 
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
@@ -107,6 +108,8 @@ class MainActivity : AppCompatActivity() {
         dateText = label(16f)
         batteryText = label(15f)
         keepText = label(15f)
+        allSoundText = label(15f)
+        fullScreenText = label(15f)
 
         toggle = btn("") {
             if (Prefs.enabled(this)) {
@@ -132,6 +135,11 @@ class MainActivity : AppCompatActivity() {
         root.addView(toggle)
 
         // ----- كل صلاة -----
+        // ----- نغمة كل الصلوات مرة واحدة -----
+        root.addView(title("🔔 نغمة كل الصلوات"))
+        root.addView(allSoundText)
+        root.addView(btn("تغيير نغمة كل الصلوات") { chooseSound(null) })
+
         root.addView(title("🕌 الصلوات (الجرس والوقت والنغمة لكل صلاة)"))
         Prayer.values().forEach { p ->
             root.addView(
@@ -159,6 +167,8 @@ class MainActivity : AppCompatActivity() {
         root.addView(keepText)
         keepButton = btn("") { toggleKeepAlive() }
         root.addView(keepButton)
+        root.addView(fullScreenText)
+        root.addView(btn("السماح بعرض شاشة الأذان على شاشة القفل") { askFullScreen() })
 
         // ----- مدة الرنين -----
         root.addView(title("⏱ مدة الرنين (لكل الصلوات)"))
@@ -174,6 +184,7 @@ class MainActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString("pp", pendingPrayer?.name)
+        outState.putBoolean("pall", pendingAll)
     }
 
     override fun onResume() {
@@ -245,10 +256,11 @@ class MainActivity : AppCompatActivity() {
         return card
     }
 
-    private fun chooseSound(p: Prayer) {
+    private fun chooseSound(p: Prayer?) {
         pendingPrayer = p
+        pendingAll = (p == null)
         AlertDialog.Builder(this)
-            .setTitle("نغمة صلاة " + p.ar)
+            .setTitle(if (p == null) "نغمة كل الصلوات" else "نغمة صلاة " + p.ar)
             .setItems(
                 arrayOf(
                     "اختيار نغمة من نغمات التليفون",
@@ -262,17 +274,14 @@ class MainActivity : AppCompatActivity() {
                             putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
                             putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, false)
-                            Prefs.sound(this@MainActivity, p)?.let {
+                            Prefs.sound(this@MainActivity, p ?: Prayer.FAJR)?.let {
                                 putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(it))
                             }
                         }
                         ringtonePicker.launch(i)
                     }
                     1 -> filePicker.launch(arrayOf("audio/*"))
-                    else -> {
-                        Prefs.setSound(this, p, null)
-                        refresh()
-                    }
+                    else -> applySound(null)
                 }
             }
             .show()
@@ -325,6 +334,32 @@ class MainActivity : AppCompatActivity() {
         Prefs.setKeepAlive(this, on)
         if (on) KeepAliveService.start(this) else KeepAliveService.stop(this)
         refresh()
+    }
+
+    /** بيطبّق النغمة على صلاة واحدة أو على كل الصلوات */
+    private fun applySound(s: String?) {
+        val targets = if (pendingAll) Prayer.values().toList() else listOfNotNull(pendingPrayer)
+        for (p in targets) Prefs.setSound(this, p, s)
+        refresh()
+    }
+
+    private fun canFullScreen(): Boolean {
+        if (Build.VERSION.SDK_INT < 34) return true
+        return getSystemService(NotificationManager::class.java).canUseFullScreenIntent()
+    }
+
+    private fun askFullScreen() {
+        if (canFullScreen()) {
+            Toast.makeText(this, "مسموح بالفعل ✅", Toast.LENGTH_SHORT).show()
+            return
+        }
+        try {
+            startActivity(
+                Intent(Settings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT, Uri.parse("package:$packageName"))
+            )
+        } catch (_: Exception) {
+            openAppDetails()
+        }
     }
 
     private fun isWhitelisted(): Boolean {
@@ -432,6 +467,11 @@ class MainActivity : AppCompatActivity() {
         durationText.text = "مدة الرنين: " + Prefs.duration(this) + " ثانية"
         batteryText.text = if (isWhitelisted()) "✅ مسموح للتطبيق بالعمل في الخلفية"
         else "⚠️ غير مسموح: الودجت ممكن يقف لما التليفون يتقفل. اضغط الزرار تحت"
+        val sounds = Prayer.values().map { Prefs.sound(this, it) }.toSet()
+        allSoundText.text = if (sounds.size == 1) "النغمة الحالية لكل الصلوات: " + soundName(Prayer.FAJR)
+        else "النغمات مختلفة حسب الصلاة"
+        fullScreenText.text = if (canFullScreen()) "✅ شاشة الأذان على القفل مسموحة"
+        else "⚠️ شاشة الأذان على القفل غير مسموحة. اضغط الزرار تحت"
         val ka = Prefs.keepAlive(this)
         keepText.text = if (ka) "✅ التشغيل المستمر شغال (إشعار ثابت بيحافظ على التطبيق حي)"
         else "التشغيل المستمر متوقف"
