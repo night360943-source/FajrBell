@@ -47,6 +47,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var toggle: Button
 
     private val rows = LinkedHashMap<Prayer, Row>()
+    private val remindSwitches = LinkedHashMap<Prayer, SwitchCompat>()
+    private val remindTexts = LinkedHashMap<Prayer, TextView>()
     private var pendingPrayer: Prayer? = null
     private var pendingAll = false
     private lateinit var allSoundText: TextView
@@ -222,6 +224,17 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        val remindSw = SwitchCompat(this).apply {
+            textSize = 15f
+            setPadding(0, 8, 0, 8)
+            setOnClickListener {
+                Prefs.setRemindEnabled(this@MainActivity, p, isChecked)
+                if (Prefs.enabled(this@MainActivity)) FajrScheduler.schedule(this@MainActivity)
+                refresh()
+            }
+        }
+        val remindText = label(15f)
+
         val offsetText = label(16f)
         val soundText = label(15f)
 
@@ -244,16 +257,41 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.startForegroundService(this, i)
         })
 
-        val edit = btn("⚙ تعديل الوقت والنغمة") {
+        details.addView(remindText)
+        details.addView(stepper(
+            "−5" to { changeRemind(p, -5) }, "−1" to { changeRemind(p, -1) },
+            "+1" to { changeRemind(p, 1) }, "+5" to { changeRemind(p, 5) }
+        ))
+        details.addView(btn("تجربة تنبيه " + p.ar) { testReminder(p) })
+
+        val edit = btn("⚙ تعديل الوقت والنغمة والتنبيه") {
             details.visibility = if (details.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
         card.addView(sw)
+        card.addView(remindSw)
         card.addView(edit)
         card.addView(details)
 
         rows[p] = Row(sw, offsetText, soundText)
+        remindSwitches[p] = remindSw
+        remindTexts[p] = remindText
         return card
+    }
+
+    private fun changeRemind(p: Prayer, d: Int) {
+        Prefs.setRemindMinutes(this, p, (Prefs.remindMinutes(this, p) + d).coerceIn(1, 120))
+        if (Prefs.enabled(this)) FajrScheduler.schedule(this)
+        refresh()
+    }
+
+    private fun testReminder(p: Prayer) {
+        val adhan = FajrScheduler.displayTimes()[p]?.time ?: System.currentTimeMillis()
+        val i = Intent(this, ReminderService::class.java)
+            .putExtra("key", p.name)
+            .putExtra("minutes", Prefs.remindMinutes(this, p))
+            .putExtra("adhan", adhan)
+        ContextCompat.startForegroundService(this, i)
     }
 
     private fun chooseSound(p: Prayer?) {
@@ -460,6 +498,14 @@ class MainActivity : AppCompatActivity() {
                 else -> "الجرس بعد الأذان بـ " + off + " دقيقة"
             }
             row.soundText.text = "النغمة: " + soundName(p)
+
+            val rm = Prefs.remindMinutes(this, p)
+            remindSwitches[p]?.let {
+                it.text = "🔊 تنبيه «اقتربت صلاة " + p.ar + "» قبلها بـ " + rm + " دقيقة"
+                it.isChecked = Prefs.remindEnabled(this, p)
+            }
+            remindTexts[p]?.text = "التنبيه الصوتي قبل الصلاة بـ " + rm + " دقيقة (الساعة " +
+                Fmt.time(Date(time.time - rm * 60_000L)) + ")"
         }
 
         dateText.text = Fmt.hijri(Prefs.hijriAdjust(this)) + " هـ   |   " + Fmt.gregorian() +

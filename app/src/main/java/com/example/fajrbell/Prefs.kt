@@ -45,4 +45,14 @@ object Prefs {
     /** التشغيل المستمر (إشعار ثابت بيحافظ على التطبيق حي) */
     fun keepAlive(c: Context) = sp(c).getBoolean("keep_alive", false)
     fun setKeepAlive(c: Context, v: Boolean) = sp(c).edit().putBoolean("keep_alive", v).apply()
+
+    /** تنبيه "اقتربت صلاة ..." قبل كل صلاة (شغال افتراضياً) */
+    fun remindEnabled(c: Context, p: Prayer) = sp(c).getBoolean("remind_" + p.name, true)
+    fun setRemindEnabled(c: Context, p: Prayer, v: Boolean) =
+        sp(c).edit().putBoolean("remind_" + p.name, v).apply()
+
+    /** التنبيه قبل الصلاة بكام دقيقة (افتراضي 15) */
+    fun remindMinutes(c: Context, p: Prayer): Int = sp(c).getInt("remind_min_" + p.name, 15)
+    fun setRemindMinutes(c: Context, p: Prayer, v: Int) =
+        sp(c).edit().putInt("remind_min_" + p.name, v).apply()
 }

@@ -33,6 +33,9 @@ object FajrScheduler {
     /** رنة جاية: الصلاة + وقت الأذان + وقت الرنين بعد التعديل */
     class Next(val prayer: Prayer, val time: Date, val ring: Date)
 
+    /** تنبيه "اقتربت صلاة ...": الصلاة + وقت أذانها + وقت التنبيه + قبلها بكام دقيقة */
+    class NextReminder(val prayer: Prayer, val time: Date, val at: Date, val minutes: Int)
+
     /** مواقيت الصلوات الخمس بطريقة الهيئة المصرية ليوم معين (0 = النهارده) */
     fun timesFor(dayOffset: Int): Map<Prayer, Date> {
         val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
@@ -102,24 +105,67 @@ object FajrScheduler {
         )
     }
 
+    private fun reminderPendingIntent(context: Context, r: NextReminder?): PendingIntent {
+        val i = Intent(context, ReminderReceiver::class.java)
+        if (r != null) {
+            i.putExtra("key", r.prayer.name)
+            i.putExtra("minutes", r.minutes)
+            i.putExtra("adhan", r.time.time)
+        }
+        return PendingIntent.getBroadcast(
+            context, 8, i, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    /** أقرب تنبيه "اقتربت صلاة ..." جاي بين الصلوات اللي تنبيهها مفعّل */
+    fun nextReminder(context: Context): NextReminder? {
+        val now = System.currentTimeMillis()
+        var best: NextReminder? = null
+        for (day in 0..3) {
+            for ((prayer, time) in timesFor(day)) {
+                if (!Prefs.remindEnabled(context, prayer)) continue
+                val mins = Prefs.remindMinutes(context, prayer)
+                val at = time.time - mins * 60_000L
+                val b = best
+                if (at > now && (b == null || at < b.at.time)) {
+                    best = NextReminder(prayer, time, Date(at), mins)
+                }
+            }
+        }
+        return best
+    }
+
     /** بيرجع true لو اتجدول بنجاح، false لو الإذن ناقص (من غير ما التطبيق يقفل) */
     fun schedule(context: Context): Boolean {
         if (!canSchedule(context)) return false
-        val n = next(context)
-        if (n == null) {
-            cancel(context)
-            return true
-        }
         return try {
             val am = context.getSystemService(AlarmManager::class.java)
             val showIntent = PendingIntent.getActivity(
                 context, 2, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE
             )
-            am.setAlarmClock(
-                AlarmManager.AlarmClockInfo(n.ring.time, showIntent),
-                ringPendingIntent(context, n.prayer)
-            )
+
+            // جرس الأذان
+            val n = next(context)
+            if (n != null) {
+                am.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(n.ring.time, showIntent),
+                    ringPendingIntent(context, n.prayer)
+                )
+            } else {
+                am.cancel(ringPendingIntent(context, null))
+            }
+
+            // تنبيه "اقتربت صلاة ..."
+            val r = nextReminder(context)
+            if (r != null) {
+                am.setAlarmClock(
+                    AlarmManager.AlarmClockInfo(r.at.time, showIntent),
+                    reminderPendingIntent(context, r)
+                )
+            } else {
+                am.cancel(reminderPendingIntent(context, null))
+            }
             true
         } catch (e: SecurityException) {
             false
@@ -129,5 +175,6 @@ object FajrScheduler {
     fun cancel(context: Context) {
         val am = context.getSystemService(AlarmManager::class.java)
         am.cancel(ringPendingIntent(context, null))
+        am.cancel(reminderPendingIntent(context, null))
     }
 }
