@@ -71,4 +71,13 @@ object Prefs {
         sp(c).edit().putString("loc_name", name)
             .putString("loc_name_lat", lat.toString())
             .putString("loc_name_lon", lon.toString()).apply()
+
+    /** كود الدولة (EG, SA, ...) لاختيار طريقة حساب المواقيت */
+    fun country(c: Context): String? = sp(c).getString("loc_country", null)
+    fun setCountry(c: Context, v: String?) =
+        sp(c).edit().apply { if (v == null) remove("loc_country") else putString("loc_country", v) }.apply()
+
+    /** تحديث الموقع تلقائياً عند فتح التطبيق (شغال افتراضياً) */
+    fun autoLocation(c: Context) = sp(c).getBoolean("auto_location", true)
+    fun setAutoLocation(c: Context, v: Boolean) = sp(c).edit().putBoolean("auto_location", v).apply()
 }

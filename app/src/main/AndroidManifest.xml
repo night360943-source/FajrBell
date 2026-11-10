@@ -22,6 +22,7 @@
     </queries>
 
     <application
+        android:name=".FajrApp"
         android:label="جرس الصلاة"
         android:icon="@drawable/ic_launcher"
         android:supportsRtl="true"

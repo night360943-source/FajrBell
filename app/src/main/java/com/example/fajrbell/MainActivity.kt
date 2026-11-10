@@ -51,6 +51,13 @@ class MainActivity : AppCompatActivity() {
     private val remindTexts = LinkedHashMap<Prayer, TextView>()
     private var pendingPrayer: Prayer? = null
     private var pendingAll = false
+    private lateinit var locText: TextView
+    private var lastLocDetect = 0L
+    private var askedLocPerm = false
+    private val locPermLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            if (LocationHelper.hasPermission(this)) detectLocationForTimes(true) else refresh()
+        }
     private lateinit var allSoundText: TextView
     private lateinit var fullScreenText: TextView
     private var waitingForPermission = false
@@ -110,6 +117,7 @@ class MainActivity : AppCompatActivity() {
         dateText = label(16f)
         batteryText = label(15f)
         keepText = label(15f)
+        locText = label(15f)
         allSoundText = label(15f)
         fullScreenText = label(15f)
 
@@ -142,6 +150,19 @@ class MainActivity : AppCompatActivity() {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply { bottomMargin = 16 }
+        )
+
+        // ----- الموقع (المواقيت والقبلة بتتحسب عليه) -----
+        root.addView(locText)
+        root.addView(btn("📍 تحديث الموقع الآن") { detectLocationForTimes(true) })
+        root.addView(
+            SwitchCompat(this).apply {
+                text = "تحديث الموقع تلقائياً عند فتح التطبيق"
+                textSize = 15f
+                isChecked = Prefs.autoLocation(this@MainActivity)
+                setPadding(0, 8, 0, 8)
+                setOnClickListener { Prefs.setAutoLocation(this@MainActivity, isChecked) }
+            }
         )
 
         // ----- الصلاة القادمة والوقت المتبقي -----
@@ -214,6 +235,7 @@ class MainActivity : AppCompatActivity() {
         refresh()
         if (PrayerWidgetProvider.hasWidgets(this)) PrayerWidgetProvider.scheduleTick(this)
         if (Prefs.keepAlive(this)) KeepAliveService.start(this)
+        if (Prefs.autoLocation(this)) detectLocationForTimes(false)
         handler.post(ticker)
     }
 
@@ -293,6 +315,25 @@ class MainActivity : AppCompatActivity() {
         remindSwitches[p] = remindSw
         remindTexts[p] = remindText
         return card
+    }
+
+    /** بيقرأ مكانك ويحسب المواقيت والجرس والودجت عليه */
+    private fun detectLocationForTimes(force: Boolean) {
+        if (!LocationHelper.hasPermission(this)) {
+            if (force || !askedLocPerm) {
+                askedLocPerm = true
+                locPermLauncher.launch(
+                    arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+                )
+            }
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (!force && now - lastLocDetect < 5 * 60_000L) return
+        lastLocDetect = now
+        LocationHelper.detect(this) { loc ->
+            LocationHelper.save(this, loc) { refresh() }
+        }
     }
 
     private fun changeRemind(p: Prayer, d: Int) {
@@ -541,6 +582,9 @@ class MainActivity : AppCompatActivity() {
         durationText.text = "مدة الرنين: " + Prefs.duration(this) + " ثانية"
         batteryText.text = if (isWhitelisted()) "✅ مسموح للتطبيق بالعمل في الخلفية"
         else "⚠️ غير مسموح: الودجت ممكن يقف لما التليفون يتقفل. اضغط الزرار تحت"
+        locText.text = "📍 المواقيت والقبلة محسوبة على:\n" + LocationHelper.currentName(this) +
+            "\nطريقة الحساب: " + FajrScheduler.methodName(this) +
+            (if (!LocationHelper.hasPermission(this)) "\n⚠️ اسمح بالموقع عشان المواقيت تتحدث مع مكانك" else "")
         val sounds = Prayer.values().map { Prefs.sound(this, it) }.toSet()
         allSoundText.text = if (sounds.size == 1) "النغمة الحالية لكل الصلوات: " + soundName(Prayer.FAJR)
         else "النغمات مختلفة حسب الصلاة"

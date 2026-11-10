@@ -11,6 +11,7 @@ import com.batoulapps.adhan.PrayerTimes
 import com.batoulapps.adhan.data.DateComponents
 import java.util.Calendar
 import java.util.Date
+import java.util.Locale
 
 enum class Prayer(val ar: String) {
     FAJR("الفجر"),
@@ -36,13 +37,44 @@ object FajrScheduler {
     /** تنبيه "اقتربت صلاة ...": الصلاة + وقت أذانها + وقت التنبيه + قبلها بكام دقيقة */
     class NextReminder(val prayer: Prayer, val time: Date, val at: Date, val minutes: Int)
 
-    /** مواقيت الصلوات الخمس بطريقة الهيئة المصرية ليوم معين (0 = النهارده) */
+    private fun inEgypt(lat: Double, lon: Double): Boolean =
+        lat in 21.9..31.8 && lon in 24.6..36.95
+
+    /** طريقة حساب المواقيت حسب الدولة (مصر: الهيئة المصرية العامة للمساحة) */
+    fun method(c: Context): CalculationMethod {
+        return when (Prefs.country(c)?.uppercase(Locale.US)) {
+            "EG" -> CalculationMethod.EGYPTIAN
+            "SA" -> CalculationMethod.UMM_AL_QURA
+            "AE" -> CalculationMethod.DUBAI
+            "KW" -> CalculationMethod.KUWAIT
+            "QA" -> CalculationMethod.QATAR
+            null, "" ->
+                if (inEgypt(Prefs.locLat(c, LATITUDE), Prefs.locLon(c, LONGITUDE))) {
+                    CalculationMethod.EGYPTIAN
+                } else {
+                    CalculationMethod.MUSLIM_WORLD_LEAGUE
+                }
+            else -> CalculationMethod.MUSLIM_WORLD_LEAGUE
+        }
+    }
+
+    fun methodName(c: Context): String = when (method(c)) {
+        CalculationMethod.EGYPTIAN -> "الهيئة المصرية العامة للمساحة"
+        CalculationMethod.UMM_AL_QURA -> "أم القرى"
+        CalculationMethod.DUBAI -> "دبي"
+        CalculationMethod.KUWAIT -> "الكويت"
+        CalculationMethod.QATAR -> "قطر"
+        else -> "رابطة العالم الإسلامي"
+    }
+
+    /** مواقيت الصلوات الخمس على الموقع المحفوظ ليوم معين (0 = النهارده) */
     fun timesFor(dayOffset: Int): Map<Prayer, Date> {
         val cal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, dayOffset) }
+        val app = FajrApp.instance
         val t = PrayerTimes(
-            Coordinates(LATITUDE, LONGITUDE),
+            Coordinates(Prefs.locLat(app, LATITUDE), Prefs.locLon(app, LONGITUDE)),
             DateComponents.from(cal.time),
-            CalculationMethod.EGYPTIAN.parameters
+            method(app).parameters
         )
         return linkedMapOf(
             Prayer.FAJR to t.fajr,

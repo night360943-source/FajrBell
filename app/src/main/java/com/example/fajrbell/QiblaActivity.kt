@@ -260,58 +260,17 @@ class QiblaActivity : AppCompatActivity(), SensorEventListener {
         }
     }
 
-    /** بيظبط القبلة على الموقع ده ويجيب اسم المكان */
+    /** بيظبط القبلة على الموقع ده (وكمان بيحدّث مواقيت الصلاة) ويجيب اسم المكان */
     private fun applyLocation(loc: Location) {
         lat = loc.latitude
         lon = loc.longitude
-        Prefs.setLocation(this, lat, lon)
         qiblaView.qibla = QiblaMath.bearing(lat, lon)
         declination = computeDeclination(lat, lon, loc.altitude.toFloat())
-        resolveName(lat, lon)
-        qiblaView.invalidate()
-    }
-
-    private fun resolveName(lat: Double, lon: Double) {
-        val cached = Prefs.locName(this)
-        if (cached != null &&
-            near(lat, lon, Prefs.locNameLat(this, lat), Prefs.locNameLon(this, lon), 3000f)
-        ) {
-            qiblaView.placeName = cached
+        LocationHelper.save(this, loc) { name ->
+            qiblaView.placeName = name
             qiblaView.invalidate()
-            return
         }
-        qiblaView.placeName = coordsText(lat, lon) + "  (جاري تحديد اسم المكان…)"
         qiblaView.invalidate()
-        Thread {
-            val name = geocodeName(lat, lon)
-            handler.post {
-                if (name != null) {
-                    Prefs.setLocName(this, lat, lon, name)
-                    qiblaView.placeName = name
-                } else {
-                    qiblaView.placeName = coordsText(lat, lon) + "  (اسم المكان محتاج إنترنت)"
-                }
-                qiblaView.invalidate()
-            }
-        }.start()
-    }
-
-    /** المكان + المحافظة (+ الدولة لو برا مصر) */
-    @Suppress("DEPRECATION")
-    private fun geocodeName(lat: Double, lon: Double): String? {
-        return try {
-            if (!Geocoder.isPresent()) return null
-            val g = Geocoder(this, Locale("ar"))
-            val list = g.getFromLocation(lat, lon, 1)
-            val a = list?.firstOrNull() ?: return null
-            val place = a.subLocality ?: a.locality ?: a.subAdminArea ?: a.featureName
-            val gov = a.adminArea
-            val country = if (a.countryCode != "EG") a.countryName else null
-            val parts = listOfNotNull(place, gov, country).filter { it.isNotBlank() }.distinct()
-            if (parts.isEmpty()) null else parts.joinToString("، ")
-        } catch (e: Exception) {
-            null
-        }
     }
 
     // ---------------- الحساسات ----------------
