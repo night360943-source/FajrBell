@@ -55,4 +55,20 @@ object Prefs {
     fun remindMinutes(c: Context, p: Prayer): Int = sp(c).getInt("remind_min_" + p.name, 15)
     fun setRemindMinutes(c: Context, p: Prayer, v: Int) =
         sp(c).edit().putInt("remind_min_" + p.name, v).apply()
+
+    /** آخر موقع اتحدد للقبلة (بيتحفظ عشان يشتغل من غير إنترنت) */
+    fun hasLocation(c: Context) = sp(c).contains("loc_lat")
+    fun locLat(c: Context, def: Double): Double = sp(c).getString("loc_lat", null)?.toDoubleOrNull() ?: def
+    fun locLon(c: Context, def: Double): Double = sp(c).getString("loc_lon", null)?.toDoubleOrNull() ?: def
+    fun setLocation(c: Context, lat: Double, lon: Double) =
+        sp(c).edit().putString("loc_lat", lat.toString()).putString("loc_lon", lon.toString()).apply()
+
+    /** اسم المكان (محافظة + مكان) واللي اتحسب عليه الاسم */
+    fun locName(c: Context): String? = sp(c).getString("loc_name", null)
+    fun locNameLat(c: Context, def: Double): Double = sp(c).getString("loc_name_lat", null)?.toDoubleOrNull() ?: def
+    fun locNameLon(c: Context, def: Double): Double = sp(c).getString("loc_name_lon", null)?.toDoubleOrNull() ?: def
+    fun setLocName(c: Context, lat: Double, lon: Double, name: String) =
+        sp(c).edit().putString("loc_name", name)
+            .putString("loc_name_lat", lat.toString())
+            .putString("loc_name_lon", lon.toString()).apply()
 }

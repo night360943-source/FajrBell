@@ -84,11 +84,31 @@ class RingService : Service() {
         }
 
         ringing = true
+        if (!isTest) {
+            // نوّر الشاشة وافتح شاشة الأذان (لو الأذونات مسموحة)
+            wakeScreen()
+            try { startActivity(ringIntent) } catch (e: Exception) { }
+        }
         startSound(prayer)
         startFlipListener()
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed({ stopSelf() }, Prefs.duration(this) * 1000L)
         return START_NOT_STICKY
+    }
+
+    /** بينوّر الشاشة 15 ثانية عشان ماتفضلش سودا لما الأذان يرن */
+    @Suppress("DEPRECATION")
+    private fun wakeScreen() {
+        try {
+            val pm = getSystemService(PowerManager::class.java)
+            val wl = pm.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or
+                    PowerManager.ACQUIRE_CAUSES_WAKEUP or
+                    PowerManager.ON_AFTER_RELEASE,
+                "fajrbell:ring-screen"
+            )
+            wl.acquire(15_000L)
+        } catch (e: Exception) { }
     }
 
     private fun buildPlayer(uri: Uri): MediaPlayer {

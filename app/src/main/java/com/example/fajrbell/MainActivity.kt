@@ -129,6 +129,21 @@ class MainActivity : AppCompatActivity() {
             setPadding(40, 48, 40, 48)
         }
 
+        // ----- زرار بوصلة القبلة -----
+        root.addView(
+            Button(this).apply {
+                text = "🧭 بوصلة القبلة"
+                textSize = 20f
+                setTextColor(Color.parseColor("#FFD60A"))
+                setBackgroundColor(Color.parseColor("#0B6E4F"))
+                setOnClickListener { startActivity(Intent(this@MainActivity, QiblaActivity::class.java)) }
+            },
+            LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = 16 }
+        )
+
         // ----- الصلاة القادمة والوقت المتبقي -----
         root.addView(nextLabel)
         root.addView(countdownText)
@@ -171,6 +186,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(keepButton)
         root.addView(fullScreenText)
         root.addView(btn("السماح بعرض شاشة الأذان على شاشة القفل") { askFullScreen() })
+        root.addView(btn("فتح أذونات Xiaomi (شاشة القفل والنوافذ المنبثقة)") { openXiaomiPermissions() })
 
         // ----- مدة الرنين -----
         root.addView(title("⏱ مدة الرنين (لكل الصلوات)"))
@@ -344,6 +360,18 @@ class MainActivity : AppCompatActivity() {
                     )
                 )
             )
+        } catch (_: Exception) {
+            openAppDetails()
+        }
+    }
+
+    /** صفحة أذونات التطبيق في Xiaomi/Redmi (العرض على القفل والنوافذ المنبثقة) */
+    private fun openXiaomiPermissions() {
+        try {
+            val i = Intent("miui.intent.action.APP_PERM_EDITOR")
+            i.setClassName("com.miui.securitycenter", "com.miui.permcenter.permissions.PermissionsEditorActivity")
+            i.putExtra("extra_pkgname", packageName)
+            startActivity(i)
         } catch (_: Exception) {
             openAppDetails()
         }
