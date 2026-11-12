@@ -80,4 +80,14 @@ object Prefs {
     /** تحديث الموقع تلقائياً عند فتح التطبيق (شغال افتراضياً) */
     fun autoLocation(c: Context) = sp(c).getBoolean("auto_location", true)
     fun setAutoLocation(c: Context, v: Boolean) = sp(c).edit().putBoolean("auto_location", v).apply()
+
+    /** آخر ميعاد جرس/تنبيه اشتغل (عشان ما يتكررش مرتين) */
+    fun lastRingAt(c: Context): Long = sp(c).getLong("last_ring_at", 0L)
+    fun setLastRingAt(c: Context, v: Long) = sp(c).edit().putLong("last_ring_at", v).apply()
+    fun lastRemindAt(c: Context): Long = sp(c).getLong("last_remind_at", 0L)
+    fun setLastRemindAt(c: Context, v: Long) = sp(c).edit().putLong("last_remind_at", v).apply()
+
+    /** تحديث الموقع تلقائياً في الخلفية أثناء السفر (شغال افتراضياً) */
+    fun bgLocation(c: Context) = sp(c).getBoolean("bg_location", true)
+    fun setBgLocation(c: Context, v: Boolean) = sp(c).edit().putBoolean("bg_location", v).apply()
 }

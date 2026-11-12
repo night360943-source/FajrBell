@@ -140,7 +140,12 @@ object LocationHelper {
      * بيحفظ الموقع. لو اتغير أكتر من 3 كم بيحدّث المواقيت والجرس والودجت.
      * onName بيتنادى باسم المكان (من المحفوظ أو بعد ما يتجاب من الإنترنت).
      */
-    fun save(c: Context, loc: Location, onName: ((String) -> Unit)? = null) {
+    fun save(
+        c: Context,
+        loc: Location,
+        onFinished: (() -> Unit)? = null,
+        onName: ((String) -> Unit)? = null
+    ) {
         val lat = loc.latitude
         val lon = loc.longitude
         val had = Prefs.hasLocation(c)
@@ -155,6 +160,7 @@ object LocationHelper {
         val cached = Prefs.locName(c)
         if (cached != null && near(lat, lon, Prefs.locNameLat(c, lat), Prefs.locNameLon(c, lon), 3000f)) {
             onName?.invoke(cached)
+            onFinished?.invoke()
             return
         }
         onName?.invoke(coordsText(lat, lon) + "  (جاري تحديد اسم المكان…)")
@@ -171,6 +177,7 @@ object LocationHelper {
                 } else {
                     onName?.invoke(coordsText(lat, lon) + "  (اسم المكان محتاج إنترنت)")
                 }
+                onFinished?.invoke()
             }
         }.start()
     }

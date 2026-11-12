@@ -29,6 +29,7 @@ class RingService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var sensorManager: SensorManager? = null
     private var flipListener: SensorEventListener? = null
+    private var currentPrayer: Prayer? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") {
@@ -45,6 +46,12 @@ class RingService : Service() {
             isTest -> "تجربة جرس صلاة " + prayer.ar
             else -> "حان الآن موعد صلاة " + prayer.ar
         }
+
+        // نفس الأذان شغال بالفعل: تجاهل التشغيل التاني
+        if (ringing && !isTest && prayer != null && prayer == currentPrayer) {
+            return START_NOT_STICKY
+        }
+        currentPrayer = prayer
 
         val channelId = "fajr_bell"
         val nm = getSystemService(NotificationManager::class.java)
@@ -195,6 +202,7 @@ class RingService : Service() {
 
     override fun onDestroy() {
         ringing = false
+        currentPrayer = null
         stopFlipListener()
         handler.removeCallbacksAndMessages(null)
         player?.release()

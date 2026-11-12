@@ -33,6 +33,9 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
     private var finished = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // بينطق بالفعل: تجاهل التشغيل التاني
+        if (speaking) return START_NOT_STICKY
+
         val prayer: Prayer? = intent?.getStringExtra("key")?.let {
             try { Prayer.valueOf(it) } catch (e: Exception) { null }
         }
@@ -40,10 +43,14 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         val adhan = intent?.getLongExtra("adhan", 0L) ?: 0L
         message = if (prayer != null) "اقتربت صلاة " + prayer.ar else "اقتربت الصلاة"
 
-        val channelId = "prayer_reminder"
+        // قناة صامتة تماماً: مفيش صوت ولا إشعار ظاهر، النطق هو الصوت الوحيد
+        val channelId = "prayer_reminder_quiet"
         val nm = getSystemService(NotificationManager::class.java)
-        val ch = NotificationChannel(channelId, "تنبيه قبل الصلاة", NotificationManager.IMPORTANCE_HIGH)
-        ch.setSound(null, null)   // الصوت بيجي من النطق مش من الإشعار
+        try { nm.deleteNotificationChannel("prayer_reminder") } catch (e: Exception) { }
+        val ch = NotificationChannel(channelId, "تنبيه صوتي قبل الصلاة", NotificationManager.IMPORTANCE_MIN)
+        ch.setSound(null, null)
+        ch.enableVibration(false)
+        ch.setShowBadge(false)
         nm.createNotificationChannel(ch)
 
         val open = PendingIntent.getActivity(
@@ -59,9 +66,10 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
             .setContentTitle(message)
             .setContentText(detail)
-            .setCategory(NotificationCompat.CATEGORY_REMINDER)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setSilent(true)
+            .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
             .setContentIntent(open)
             .build()
 
@@ -76,6 +84,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
             return START_NOT_STICKY
         }
 
+        speaking = true
         finished = false
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed({ finish() }, 25_000L)   // أمان: يقفل بعد 25 ثانية في أسوأ حالة
@@ -146,13 +155,14 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         if (finished) return
         finished = true
         try {
-            // سيب الإشعار ظاهر بعد ما الخدمة تخلص
-            stopForeground(STOP_FOREGROUND_DETACH)
+            // شيل الإشعار فوراً بعد النطق: الصوت بس
+            stopForeground(STOP_FOREGROUND_REMOVE)
         } catch (e: Exception) { }
         stopSelf()
     }
 
     override fun onDestroy() {
+        speaking = false
         handler.removeCallbacksAndMessages(null)
         try { tts?.shutdown() } catch (e: Exception) { }
         tts = null
@@ -162,4 +172,10 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
+
+    companion object {
+        /** true طول ما التنبيه بينطق */
+        @Volatile
+        var speaking = false
+    }
 }

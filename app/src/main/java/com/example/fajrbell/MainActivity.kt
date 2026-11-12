@@ -52,10 +52,12 @@ class MainActivity : AppCompatActivity() {
     private var pendingPrayer: Prayer? = null
     private var pendingAll = false
     private lateinit var locText: TextView
+    private lateinit var bgLocText: TextView
     private var lastLocDetect = 0L
     private var askedLocPerm = false
     private val locPermLauncher =
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+            LocationTracker.start(this)
             if (LocationHelper.hasPermission(this)) detectLocationForTimes(true) else refresh()
         }
     private lateinit var allSoundText: TextView
@@ -118,6 +120,7 @@ class MainActivity : AppCompatActivity() {
         batteryText = label(15f)
         keepText = label(15f)
         locText = label(15f)
+        bgLocText = label(14f)
         allSoundText = label(15f)
         fullScreenText = label(15f)
 
@@ -164,6 +167,22 @@ class MainActivity : AppCompatActivity() {
                 setOnClickListener { Prefs.setAutoLocation(this@MainActivity, isChecked) }
             }
         )
+        root.addView(
+            SwitchCompat(this).apply {
+                text = "📡 تحديث الموقع تلقائياً في الخلفية (للسفر)"
+                textSize = 15f
+                isChecked = Prefs.bgLocation(this@MainActivity)
+                setPadding(0, 8, 0, 8)
+                setOnClickListener {
+                    Prefs.setBgLocation(this@MainActivity, isChecked)
+                    if (isChecked) askBackgroundLocation()
+                    LocationTracker.start(this@MainActivity)
+                    refresh()
+                }
+            }
+        )
+        root.addView(bgLocText)
+        root.addView(btn("السماح بالموقع طول الوقت") { askBackgroundLocation() })
 
         // ----- الصلاة القادمة والوقت المتبقي -----
         root.addView(nextLabel)
@@ -236,6 +255,7 @@ class MainActivity : AppCompatActivity() {
         if (PrayerWidgetProvider.hasWidgets(this)) PrayerWidgetProvider.scheduleTick(this)
         if (Prefs.keepAlive(this)) KeepAliveService.start(this)
         if (Prefs.autoLocation(this)) detectLocationForTimes(false)
+        LocationTracker.start(this)
         handler.post(ticker)
     }
 
@@ -333,6 +353,28 @@ class MainActivity : AppCompatActivity() {
         lastLocDetect = now
         LocationHelper.detect(this) { loc ->
             LocationHelper.save(this, loc) { refresh() }
+        }
+    }
+
+    /** إذن الموقع طول الوقت (عشان التحديث يشتغل والتطبيق مقفول) */
+    private fun askBackgroundLocation() {
+        if (!LocationHelper.hasPermission(this)) {
+            detectLocationForTimes(true)
+            return
+        }
+        if (LocationTracker.hasBackgroundPermission(this)) {
+            Toast.makeText(this, "مسموح بالفعل ✅", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (Build.VERSION.SDK_INT == 29) {
+            ActivityCompat.requestPermissions(
+                this, arrayOf(Manifest.permission.ACCESS_BACKGROUND_LOCATION), 77
+            )
+        } else {
+            Toast.makeText(
+                this, "اختار «الأذونات» ← «الموقع» ← «السماح طوال الوقت»", Toast.LENGTH_LONG
+            ).show()
+            openAppDetails()
         }
     }
 
@@ -585,6 +627,11 @@ class MainActivity : AppCompatActivity() {
         locText.text = "📍 المواقيت والقبلة محسوبة على:\n" + LocationHelper.currentName(this) +
             "\nطريقة الحساب: " + FajrScheduler.methodName(this) +
             (if (!LocationHelper.hasPermission(this)) "\n⚠️ اسمح بالموقع عشان المواقيت تتحدث مع مكانك" else "")
+        bgLocText.text = when {
+            !Prefs.bgLocation(this) -> "التحديث في الخلفية متوقف"
+            LocationTracker.hasBackgroundPermission(this) -> "✅ التحديث التلقائي في الخلفية شغال"
+            else -> "⚠️ اختار «السماح طوال الوقت» للموقع عشان التحديث يشتغل والتطبيق مقفول"
+        }
         val sounds = Prayer.values().map { Prefs.sound(this, it) }.toSet()
         allSoundText.text = if (sounds.size == 1) "النغمة الحالية لكل الصلوات: " + soundName(Prayer.FAJR)
         else "النغمات مختلفة حسب الصلاة"
