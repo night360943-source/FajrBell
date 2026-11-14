@@ -53,6 +53,8 @@ class MainActivity : AppCompatActivity() {
     private var pendingAll = false
     private lateinit var locText: TextView
     private lateinit var bgLocText: TextView
+    private lateinit var vibText: TextView
+    private val vibSwitches = LinkedHashMap<Prayer, SwitchCompat>()
     private var lastLocDetect = 0L
     private var askedLocPerm = false
     private val locPermLauncher =
@@ -121,6 +123,7 @@ class MainActivity : AppCompatActivity() {
         keepText = label(15f)
         locText = label(15f)
         bgLocText = label(14f)
+        vibText = label(14f)
         allSoundText = label(15f)
         fullScreenText = label(15f)
 
@@ -139,6 +142,10 @@ class MainActivity : AppCompatActivity() {
             layoutDirection = View.LAYOUT_DIRECTION_RTL
             setPadding(40, 48, 40, 48)
         }
+
+        root.addView(label(12f).apply {
+            text = "الإصدار: " + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" })
+        })
 
         // ----- زرار بوصلة القبلة -----
         root.addView(
@@ -192,6 +199,23 @@ class MainActivity : AppCompatActivity() {
         root.addView(toggle)
 
         // ----- كل صلاة -----
+        // ----- الاهتزاز -----
+        root.addView(title("📳 الاهتزاز مع الأذان"))
+        root.addView(
+            SwitchCompat(this).apply {
+                text = "اهتزاز مع كل الصلوات"
+                textSize = 17f
+                isChecked = Prefs.vibrate(this@MainActivity)
+                setPadding(0, 16, 0, 16)
+                setOnClickListener {
+                    Prefs.setVibrate(this@MainActivity, isChecked)
+                    refresh()
+                }
+            }
+        )
+        root.addView(vibText)
+        root.addView(btn("تجربة اهتزاز التليفون الآن") { testVibration() })
+
         // ----- نغمة كل الصلوات مرة واحدة -----
         root.addView(title("🔔 نغمة كل الصلوات"))
         root.addView(allSoundText)
@@ -293,6 +317,15 @@ class MainActivity : AppCompatActivity() {
         }
         val remindText = label(15f)
 
+        val vibSw = SwitchCompat(this).apply {
+            textSize = 15f
+            setPadding(0, 8, 0, 8)
+            setOnClickListener {
+                Prefs.setPrayerVibrate(this@MainActivity, p, isChecked)
+                refresh()
+            }
+        }
+
         val offsetText = label(16f)
         val soundText = label(15f)
 
@@ -328,11 +361,13 @@ class MainActivity : AppCompatActivity() {
 
         card.addView(sw)
         card.addView(remindSw)
+        card.addView(vibSw)
         card.addView(edit)
         card.addView(details)
 
         rows[p] = Row(sw, offsetText, soundText)
         remindSwitches[p] = remindSw
+        vibSwitches[p] = vibSw
         remindTexts[p] = remindText
         return card
     }
@@ -378,6 +413,21 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** بيهزّ التليفون ثانية ونص عشان تتأكد إن الاهتزاز شغال */
+    private fun testVibration() {
+        if (!Vib.hasVibrator(this)) {
+            Toast.makeText(this, "التليفون مفيهوش موتور اهتزاز", Toast.LENGTH_LONG).show()
+            return
+        }
+        val ok = Vib.pulse(this, 1500)
+        Toast.makeText(
+            this,
+            if (ok) "اهتز؟ لو ماحسيتش بيه راجع إعدادات الصوت والاهتزاز في التليفون"
+            else "فشل تشغيل الاهتزاز من التطبيق",
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
     private fun changeRemind(p: Prayer, d: Int) {
         Prefs.setRemindMinutes(this, p, (Prefs.remindMinutes(this, p) + d).coerceIn(1, 120))
         if (Prefs.enabled(this)) FajrScheduler.schedule(this)
@@ -390,6 +440,7 @@ class MainActivity : AppCompatActivity() {
             .putExtra("key", p.name)
             .putExtra("minutes", Prefs.remindMinutes(this, p))
             .putExtra("adhan", adhan)
+            .putExtra("test", true)
         ContextCompat.startForegroundService(this, i)
     }
 
@@ -610,6 +661,11 @@ class MainActivity : AppCompatActivity() {
             }
             row.soundText.text = "النغمة: " + soundName(p)
 
+            vibSwitches[p]?.let {
+                it.text = "📳 اهتزاز مع أذان " + p.ar
+                it.isChecked = Prefs.prayerVibrate(this, p)
+            }
+
             val rm = Prefs.remindMinutes(this, p)
             remindSwitches[p]?.let {
                 it.text = "🔊 تنبيه «اقتربت صلاة " + p.ar + "» قبلها بـ " + rm + " دقيقة"
@@ -631,6 +687,11 @@ class MainActivity : AppCompatActivity() {
             !Prefs.bgLocation(this) -> "التحديث في الخلفية متوقف"
             LocationTracker.hasBackgroundPermission(this) -> "✅ التحديث التلقائي في الخلفية شغال"
             else -> "⚠️ اختار «السماح طوال الوقت» للموقع عشان التحديث يشتغل والتطبيق مقفول"
+        }
+        vibText.text = when {
+            !Vib.hasVibrator(this) -> "❌ التليفون مفيهوش موتور اهتزاز"
+            !Prefs.vibrate(this) -> "الاهتزاز متوقف لكل الصلوات"
+            else -> "✅ الاهتزاز شغال (تقدر توقفه لصلاة معينة من كارت الصلاة)"
         }
         val sounds = Prayer.values().map { Prefs.sound(this, it) }.toSet()
         allSoundText.text = if (sounds.size == 1) "النغمة الحالية لكل الصلوات: " + soundName(Prayer.FAJR)

@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.hardware.Sensor
@@ -21,6 +22,8 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.core.app.NotificationCompat
 
 class RingService : Service() {
@@ -30,9 +33,15 @@ class RingService : Service() {
     private var sensorManager: SensorManager? = null
     private var flipListener: SensorEventListener? = null
     private var currentPrayer: Prayer? = null
+    private var vibrator: Vibrator? = null
+    private var cleanStop = false        // وقف طبيعي (إيقاف من المستخدم أو انتهت المدة)
+    private var isTestRun = false
+    private var sessionId = 0L
+    private var triedFallback = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") {
+            cleanStop = true
             stopSelf()
             return START_NOT_STICKY
         }
@@ -52,6 +61,9 @@ class RingService : Service() {
             return START_NOT_STICKY
         }
         currentPrayer = prayer
+        isTestRun = isTest
+        cleanStop = false
+        triedFallback = false
 
         val channelId = "fajr_bell"
         val nm = getSystemService(NotificationManager::class.java)
@@ -92,14 +104,26 @@ class RingService : Service() {
 
         ringing = true
         if (!isTest) {
+            // مراقب: لو الأذان وقف فجأة (النظام قفل التطبيق) هيطلع إشعار
+            sessionId = System.currentTimeMillis()
+            Prefs.setRingSession(this, sessionId)
+            AdhanAlerts.scheduleWatchdog(this, sessionId, prayer?.ar, Prefs.duration(this) * 1000L + 8_000L)
+
+            // شيل إشعار "اقتربت صلاة" لو الأذان بدأ في معاده
+            if (prayer != null && Prefs.offset(this, prayer) >= 0) nm.cancel(ReminderService.noticeId(prayer))
+
             // نوّر الشاشة وافتح شاشة الأذان (لو الأذونات مسموحة)
             wakeScreen()
             try { startActivity(ringIntent) } catch (e: Exception) { }
         }
         startSound(prayer)
+        startVibration(prayer)
         startFlipListener()
         handler.removeCallbacksAndMessages(null)
-        handler.postDelayed({ stopSelf() }, Prefs.duration(this) * 1000L)
+        handler.postDelayed({
+            cleanStop = true
+            stopSelf()
+        }, Prefs.duration(this) * 1000L)
         return START_NOT_STICKY
     }
 
@@ -128,6 +152,10 @@ class RingService : Service() {
                     .build()
             )
             mp.setWakeMode(applicationContext, PowerManager.PARTIAL_WAKE_LOCK)
+            mp.setOnErrorListener { _, _, _ ->
+                onPlayerError()
+                true
+            }
             mp.setDataSource(this, uri)
             mp.isLooping = true
             mp.prepare()
@@ -137,6 +165,31 @@ class RingService : Service() {
             mp.release()
             throw e
         }
+    }
+
+    /** خطأ في تشغيل الصوت: ننبّه، ونجرّب نغمة المنبه الافتراضية مرة */
+    private fun onPlayerError() {
+        if (cleanStop) return
+        if (!isTestRun) {
+            AdhanAlerts.notifyStopped(this, currentPrayer?.ar, "حصل خطأ في تشغيل صوت الأذان")
+        }
+        if (!triedFallback) {
+            triedFallback = true
+            handler.post { startSound(null) }
+        }
+    }
+
+    /** اهتزاز متكرر طول ما الأذان بيرن (لو المفتاح العام ومفتاح الصلاة شغالين) */
+    private fun startVibration(prayer: Prayer?) {
+        stopVibration()
+        if (!Prefs.vibrate(this)) return
+        if (prayer != null && !Prefs.prayerVibrate(this, prayer)) return
+        vibrator = Vib.startRepeating(this)
+    }
+
+    private fun stopVibration() {
+        try { vibrator?.cancel() } catch (e: Exception) { }
+        vibrator = null
     }
 
     private fun startSound(prayer: Prayer?) {
@@ -179,6 +232,7 @@ class RingService : Service() {
                         if (downSince == 0L) {
                             downSince = now
                         } else if (now - downSince >= 400L) {
+                            cleanStop = true
                             stopSelf()
                         }
                     }
@@ -201,8 +255,19 @@ class RingService : Service() {
     }
 
     override fun onDestroy() {
+        if (sessionId != 0L) {
+            val open = Prefs.ringSession(this) == sessionId
+            AdhanAlerts.cancelWatchdog(this)
+            Prefs.setRingSession(this, 0L)
+            if (open && !cleanStop) {
+                // الأذان وقف من غير ما انت توقفه ومن غير ما المدة تخلص
+                AdhanAlerts.notifyStopped(this, currentPrayer?.ar, "الأذان وقف قبل ما يكتمل")
+            }
+            sessionId = 0L
+        }
         ringing = false
         currentPrayer = null
+        stopVibration()
         stopFlipListener()
         handler.removeCallbacksAndMessages(null)
         player?.release()

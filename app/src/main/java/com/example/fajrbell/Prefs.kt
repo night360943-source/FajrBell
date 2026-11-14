@@ -90,4 +90,17 @@ object Prefs {
     /** تحديث الموقع تلقائياً في الخلفية أثناء السفر (شغال افتراضياً) */
     fun bgLocation(c: Context) = sp(c).getBoolean("bg_location", true)
     fun setBgLocation(c: Context, v: Boolean) = sp(c).edit().putBoolean("bg_location", v).apply()
+
+    /** اهتزاز مع الأذان (شغال افتراضياً) */
+    fun vibrate(c: Context) = sp(c).getBoolean("vibrate", true)
+    fun setVibrate(c: Context, v: Boolean) = sp(c).edit().putBoolean("vibrate", v).apply()
+
+    /** جلسة الأذان الشغالة حالياً (0 = مفيش). بتتستخدم لاكتشاف توقف الأذان فجأة */
+    fun ringSession(c: Context): Long = sp(c).getLong("ring_session", 0L)
+    fun setRingSession(c: Context, v: Long) = sp(c).edit().putLong("ring_session", v).apply()
+
+    /** الاهتزاز لكل صلاة لوحدها (شغال افتراضياً). بيشتغل لما المفتاح العام ومفتاح الصلاة شغالين */
+    fun prayerVibrate(c: Context, p: Prayer) = sp(c).getBoolean("vib_" + p.name, true)
+    fun setPrayerVibrate(c: Context, p: Prayer, v: Boolean) =
+        sp(c).edit().putBoolean("vib_" + p.name, v).apply()
 }

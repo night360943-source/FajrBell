@@ -84,6 +84,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
             return START_NOT_STICKY
         }
 
+        postNotice(prayer, adhan, minutes, intent?.getBooleanExtra("test", false) ?: false)
         speaking = true
         finished = false
         handler.removeCallbacksAndMessages(null)
@@ -91,6 +92,48 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         tts?.shutdown()
         tts = TextToSpeech(applicationContext, this)
         return START_NOT_STICKY
+    }
+
+    /**
+     * إشعار "اقتربت صلاة ..." بعدّاد تنازلي. بيتشال لوحده لما الصلاة تبدأ (وقت الأذان).
+     */
+    private fun postNotice(prayer: Prayer?, adhan: Long, minutes: Int, isTest: Boolean) {
+        try {
+            val nm = getSystemService(NotificationManager::class.java)
+            val chId = "prayer_reminder_notice"
+            val ch = NotificationChannel(chId, "اقتربت الصلاة", NotificationManager.IMPORTANCE_DEFAULT)
+            ch.setSound(null, null)   // الصوت من النطق مش من الإشعار
+            ch.enableVibration(false)
+            nm.createNotificationChannel(ch)
+
+            val now = System.currentTimeMillis()
+            val hasCountdown = !isTest && adhan > now
+            val timeout = if (hasCountdown) adhan - now else 30_000L
+            val open = PendingIntent.getActivity(
+                this, 7, Intent(this, MainActivity::class.java),
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+            )
+            val text = if (adhan > 0L) {
+                "الأذان الساعة " + Fmt.time(Date(adhan)) + " (بعد " + minutes + " دقيقة)"
+            } else {
+                "تجربة التنبيه"
+            }
+            val b = NotificationCompat.Builder(this, chId)
+                .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
+                .setContentTitle(message)
+                .setContentText(text)
+                .setCategory(NotificationCompat.CATEGORY_REMINDER)
+                .setAutoCancel(true)
+                .setTimeoutAfter(timeout)      // بيتشال لوحده وقت بدء الصلاة
+                .setContentIntent(open)
+            if (hasCountdown) {
+                b.setWhen(adhan)
+                    .setShowWhen(true)
+                    .setUsesChronometer(true)
+                    .setChronometerCountDown(true)
+            }
+            nm.notify(noticeId(prayer), b.build())
+        } catch (e: Exception) { }
     }
 
     override fun onInit(status: Int) {
@@ -177,5 +220,8 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         /** true طول ما التنبيه بينطق */
         @Volatile
         var speaking = false
+
+        /** رقم إشعار "اقتربت صلاة ..." لكل صلاة */
+        fun noticeId(p: Prayer?): Int = 30 + (p?.ordinal ?: 9)
     }
 }
