@@ -10,6 +10,7 @@ import android.content.pm.ServiceInfo
 import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -89,8 +90,11 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         finished = false
         handler.removeCallbacksAndMessages(null)
         handler.postDelayed({ finish() }, 25_000L)   // أمان: يقفل بعد 25 ثانية في أسوأ حالة
-        tts?.shutdown()
-        tts = TextToSpeech(applicationContext, this)
+        // لو فيه ملف صوت مسجّل للصلاة دي يتشغل، وإلا نطق التليفون
+        val file = if (prayer != null) Prefs.remindFile(this, prayer) else null
+        if (file == null || !playFile(Uri.parse(file))) {
+            playViaTts()
+        }
         return START_NOT_STICKY
     }
 
@@ -136,6 +140,38 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         } catch (e: Exception) { }
     }
 
+    private fun playViaTts() {
+        if (finished) return
+        try { tts?.shutdown() } catch (e: Exception) { }
+        tts = TextToSpeech(applicationContext, this)
+    }
+
+    /** بيشغّل ملف صوت مسجّل. بيرجع false لو ماقدرش (يرجع للنطق) */
+    private fun playFile(uri: Uri): Boolean {
+        return try {
+            fallback?.release()
+            val mp = MediaPlayer()
+            mp.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ALARM)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            mp.setDataSource(this, uri)
+            mp.setOnCompletionListener { finish() }
+            mp.setOnErrorListener { _, _, _ ->
+                handler.post { playViaTts() }
+                true
+            }
+            mp.prepare()
+            mp.start()
+            fallback = mp
+            true
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     override fun onInit(status: Int) {
         val t = tts
         if (status != TextToSpeech.SUCCESS || t == null) {
@@ -149,6 +185,14 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         if (res == TextToSpeech.LANG_MISSING_DATA || res == TextToSpeech.LANG_NOT_SUPPORTED) {
             playFallback()
             return
+        }
+        // الصوت اللي اخترته من التطبيق (لو موجود)
+        val wanted = Prefs.ttsVoice(this)
+        if (wanted != null) {
+            try {
+                val v = t.voices?.firstOrNull { it.name == wanted }
+                if (v != null) t.setVoice(v)
+            } catch (e: Exception) { }
         }
         t.setAudioAttributes(
             AudioAttributes.Builder()

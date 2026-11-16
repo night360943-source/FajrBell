@@ -15,6 +15,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.OpenableColumns
 import android.provider.Settings
+import android.speech.tts.TextToSpeech
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -49,11 +50,29 @@ class MainActivity : AppCompatActivity() {
     private val rows = LinkedHashMap<Prayer, Row>()
     private val remindSwitches = LinkedHashMap<Prayer, SwitchCompat>()
     private val remindTexts = LinkedHashMap<Prayer, TextView>()
+    private val remindFileTexts = LinkedHashMap<Prayer, TextView>()
     private var pendingPrayer: Prayer? = null
     private var pendingAll = false
+    private var pendingRemind: Prayer? = null
+    private var pendingRemindAll = false
+    private val remindFilePicker =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                try {
+                    contentResolver.takePersistableUriPermission(
+                        uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    )
+                } catch (_: Exception) { }
+                val targets = if (pendingRemindAll) Prayer.values().toList() else listOfNotNull(pendingRemind)
+                for (p in targets) Prefs.setRemindFile(this, p, uri.toString())
+                refresh()
+            }
+        }
     private lateinit var locText: TextView
     private lateinit var bgLocText: TextView
     private lateinit var vibText: TextView
+    private lateinit var voiceText: TextView
+    private var pickerTts: TextToSpeech? = null
     private val vibSwitches = LinkedHashMap<Prayer, SwitchCompat>()
     private var lastLocDetect = 0L
     private var askedLocPerm = false
@@ -124,6 +143,7 @@ class MainActivity : AppCompatActivity() {
         locText = label(15f)
         bgLocText = label(14f)
         vibText = label(14f)
+        voiceText = label(14f)
         allSoundText = label(15f)
         fullScreenText = label(15f)
 
@@ -215,6 +235,19 @@ class MainActivity : AppCompatActivity() {
         )
         root.addView(vibText)
         root.addView(btn("تجربة اهتزاز التليفون الآن") { testVibration() })
+
+        // ----- صوت تنبيه "اقتربت صلاة ..." -----
+        root.addView(title("🎙 صوت تنبيه «اقتربت صلاة»"))
+        root.addView(voiceText)
+        root.addView(btn("اختيار صوت التنبيه (رجل / سيدة)") { chooseTtsVoice() })
+        root.addView(btn("🎙 ملف صوت واحد لكل التنبيهات (تسجيل بصوتك مثلاً)") {
+            pendingRemindAll = true
+            remindFilePicker.launch(arrayOf("audio/*"))
+        })
+        root.addView(btn("الرجوع لنطق التليفون لكل التنبيهات") {
+            for (p in Prayer.values()) Prefs.setRemindFile(this, p, null)
+            refresh()
+        })
 
         // ----- نغمة كل الصلوات مرة واحدة -----
         root.addView(title("🔔 نغمة كل الصلوات"))
@@ -316,6 +349,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
         val remindText = label(15f)
+        val remindFileText = label(14f)
 
         val vibSw = SwitchCompat(this).apply {
             textSize = 15f
@@ -354,6 +388,16 @@ class MainActivity : AppCompatActivity() {
             "+1" to { changeRemind(p, 1) }, "+5" to { changeRemind(p, 5) }
         ))
         details.addView(btn("تجربة تنبيه " + p.ar) { testReminder(p) })
+        details.addView(remindFileText)
+        details.addView(btn("🎙 ملف صوت لتنبيه " + p.ar + " (بدل النطق)") {
+            pendingRemind = p
+            pendingRemindAll = false
+            remindFilePicker.launch(arrayOf("audio/*"))
+        })
+        details.addView(btn("استخدام نطق التليفون لـ " + p.ar) {
+            Prefs.setRemindFile(this, p, null)
+            refresh()
+        })
 
         val edit = btn("⚙ تعديل الوقت والنغمة والتنبيه") {
             details.visibility = if (details.visibility == View.VISIBLE) View.GONE else View.VISIBLE
@@ -369,6 +413,7 @@ class MainActivity : AppCompatActivity() {
         remindSwitches[p] = remindSw
         vibSwitches[p] = vibSw
         remindTexts[p] = remindText
+        remindFileTexts[p] = remindFileText
         return card
     }
 
@@ -411,6 +456,72 @@ class MainActivity : AppCompatActivity() {
             ).show()
             openAppDetails()
         }
+    }
+
+    /** بيعرض الأصوات العربية المتثبتة على التليفون، وبتسمع كل واحد قبل ما تختار */
+    private fun chooseTtsVoice() {
+        Toast.makeText(this, "جاري تحميل الأصوات…", Toast.LENGTH_SHORT).show()
+        try { pickerTts?.shutdown() } catch (e: Exception) { }
+        pickerTts = TextToSpeech(applicationContext) { status ->
+            val t = pickerTts
+            if (status != TextToSpeech.SUCCESS || t == null) {
+                Toast.makeText(this, "النطق مش متاح على التليفون", Toast.LENGTH_LONG).show()
+            } else {
+                try { t.setLanguage(java.util.Locale("ar")) } catch (e: Exception) { }
+                val voices = try {
+                    t.voices?.filter { it.locale.language == "ar" || it.name.startsWith("ar") }?.sortedBy { it.name } ?: emptyList()
+                } catch (e: Exception) {
+                    emptyList()
+                }
+                if (voices.isEmpty()) {
+                    Toast.makeText(
+                        this, "مفيش أصوات عربية ظاهرة (المحرك: " + t.defaultEngine + "). ثبّتها من إعدادات النطق أو استخدم ملف صوت مسجّل",
+                        Toast.LENGTH_LONG
+                    ).show()
+                } else {
+                    showVoiceDialog(t, voices)
+                }
+            }
+        }
+    }
+
+    private fun showVoiceDialog(t: TextToSpeech, voices: List<android.speech.tts.Voice>) {
+        val names = voices.mapIndexed { i, v ->
+            "صوت " + (i + 1) + (if (v.isNetworkConnectionRequired) " (يحتاج إنترنت)" else " (بدون إنترنت)") +
+                "  [" + v.name + "]"
+        }.toTypedArray()
+        var selected = voices.indexOfFirst { it.name == Prefs.ttsVoice(this) }.coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle("اضغط على الصوت عشان تسمعه، وبعدين «حفظ»")
+            .setSingleChoiceItems(names, selected) { _, which ->
+                selected = which
+                try {
+                    t.setVoice(voices[which])
+                    t.speak("اقتربت صلاة الظهر", TextToSpeech.QUEUE_FLUSH, null, "sample")
+                } catch (e: Exception) { }
+            }
+            .setPositiveButton("حفظ") { _, _ ->
+                Prefs.setTtsVoice(this, voices[selected].name)
+                refresh()
+            }
+            .setNeutralButton("الصوت الافتراضي") { _, _ ->
+                Prefs.setTtsVoice(this, null)
+                refresh()
+            }
+            .setNegativeButton("إلغاء", null)
+            .setOnDismissListener {
+                try {
+                    t.stop()
+                    t.shutdown()
+                } catch (e: Exception) { }
+                pickerTts = null
+            }
+            .show()
+    }
+
+    override fun onDestroy() {
+        try { pickerTts?.shutdown() } catch (e: Exception) { }
+        super.onDestroy()
     }
 
     /** بيهزّ التليفون ثانية ونص عشان تتأكد إن الاهتزاز شغال */
@@ -661,6 +772,8 @@ class MainActivity : AppCompatActivity() {
             }
             row.soundText.text = "النغمة: " + soundName(p)
 
+            remindFileTexts[p]?.text =
+                if (Prefs.remindFile(this, p) != null) "صوت التنبيه: ملف مسجّل ✅" else "صوت التنبيه: نطق التليفون"
             vibSwitches[p]?.let {
                 it.text = "📳 اهتزاز مع أذان " + p.ar
                 it.isChecked = Prefs.prayerVibrate(this, p)
@@ -688,6 +801,7 @@ class MainActivity : AppCompatActivity() {
             LocationTracker.hasBackgroundPermission(this) -> "✅ التحديث التلقائي في الخلفية شغال"
             else -> "⚠️ اختار «السماح طوال الوقت» للموقع عشان التحديث يشتغل والتطبيق مقفول"
         }
+        voiceText.text = "الصوت الحالي: " + (Prefs.ttsVoice(this) ?: "الافتراضي (بتاع التليفون)")
         vibText.text = when {
             !Vib.hasVibrator(this) -> "❌ التليفون مفيهوش موتور اهتزاز"
             !Prefs.vibrate(this) -> "الاهتزاز متوقف لكل الصلوات"

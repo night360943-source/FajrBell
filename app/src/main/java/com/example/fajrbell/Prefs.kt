@@ -103,4 +103,16 @@ object Prefs {
     fun prayerVibrate(c: Context, p: Prayer) = sp(c).getBoolean("vib_" + p.name, true)
     fun setPrayerVibrate(c: Context, p: Prayer, v: Boolean) =
         sp(c).edit().putBoolean("vib_" + p.name, v).apply()
+
+    /** اسم صوت النطق المختار لتنبيه "اقتربت صلاة ..." (null = الافتراضي) */
+    fun ttsVoice(c: Context): String? = sp(c).getString("tts_voice", null)
+    fun setTtsVoice(c: Context, v: String?) =
+        sp(c).edit().apply { if (v == null) remove("tts_voice") else putString("tts_voice", v) }.apply()
+
+    /** ملف صوت مسجّل لتنبيه "اقتربت صلاة ..." بدل نطق التليفون (null = النطق) */
+    fun remindFile(c: Context, p: Prayer): String? = sp(c).getString("remind_file_" + p.name, null)
+    fun setRemindFile(c: Context, p: Prayer, v: String?) =
+        sp(c).edit().apply {
+            if (v == null) remove("remind_file_" + p.name) else putString("remind_file_" + p.name, v)
+        }.apply()
 }
