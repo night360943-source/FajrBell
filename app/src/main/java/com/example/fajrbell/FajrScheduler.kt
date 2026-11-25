@@ -15,10 +15,20 @@ import java.util.Locale
 
 enum class Prayer(val ar: String) {
     FAJR("الفجر"),
+    SUNRISE("الشروق"),
     DHUHR("الظهر"),
     ASR("العصر"),
     MAGHRIB("المغرب"),
-    ISHA("العشاء")
+    ISHA("العشاء");
+
+    /** الاسم الكامل: "صلاة الظهر" أو "الشروق" */
+    val full: String get() = if (this == SUNRISE) "الشروق" else "صلاة " + ar
+
+    /** الجملة اللي بتتقال قبل الموعد */
+    val approachPhrase: String get() = if (this == SUNRISE) "اقترب الشروق" else "اقتربت صلاة " + ar
+
+    /** كلمة الموعد: "الأذان" أو "الشروق" */
+    val timeWord: String get() = if (this == SUNRISE) "الشروق" else "الأذان"
 }
 
 object FajrScheduler {
@@ -78,6 +88,7 @@ object FajrScheduler {
         )
         return linkedMapOf(
             Prayer.FAJR to t.fajr,
+            Prayer.SUNRISE to t.sunrise,
             Prayer.DHUHR to t.dhuhr,
             Prayer.ASR to t.asr,
             Prayer.MAGHRIB to t.maghrib,

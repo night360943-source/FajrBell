@@ -47,7 +47,7 @@ class RingActivity : AppCompatActivity() {
         val prayer: Prayer? = intent?.getStringExtra("key")?.let {
             try { Prayer.valueOf(it) } catch (e: Exception) { null }
         }
-        val title = if (prayer != null) "حان الآن موعد صلاة " + prayer.ar else "جرس الصلاة"
+        val title = if (prayer != null) "حان الآن موعد " + prayer.full else "جرس الصلاة"
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

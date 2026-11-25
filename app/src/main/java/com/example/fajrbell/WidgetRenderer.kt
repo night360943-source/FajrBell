@@ -240,7 +240,7 @@ object WidgetRenderer {
         c.drawLine(cx - iw * 0.4f, top + ih * 0.385f, cx + iw * 0.4f, top + ih * 0.385f, line)
 
         // 2) الصلاة القادمة ووقت أذانها: الاسم على اليمين والوقت على الشمال
-        val nameText = "صلاة " + next.prayer.ar
+        val nameText = next.prayer.full
         val num = Fmt.clock(next.time)
         val ap = Fmt.ampm(next.time)
         var tSize = ih * 0.22f
@@ -308,7 +308,7 @@ object WidgetRenderer {
 
         if (columns) {
             // صف أفقي: الفجر على اليمين والعشاء على الشمال
-            val colW = (r.width() - 2f * pad) / 5f
+            val colW = (r.width() - 2f * pad) / prayers.size.toFloat()
             val timeSz = min(ph * 0.27f, colW * 0.26f)
             val apSz = timeSz * 0.55f
             val nameSz = min(ph * 0.22f, colW * 0.24f)
@@ -344,7 +344,7 @@ object WidgetRenderer {
             }
         } else {
             // عمود: اسم الصلاة على اليمين والوقت على الشمال
-            val rowH = (ph - pad) / 5f
+            val rowH = (ph - pad) / prayers.size.toFloat()
             val size = min(rowH * 0.52f, r.width() * 0.12f)
             for (i in prayers.indices) {
                 val p = prayers[i]

@@ -254,7 +254,7 @@ class MainActivity : AppCompatActivity() {
         root.addView(allSoundText)
         root.addView(btn("تغيير نغمة كل الصلوات") { chooseSound(null) })
 
-        root.addView(title("🕌 الصلوات (الجرس والوقت والنغمة لكل صلاة)"))
+        root.addView(title("🕌 الصلوات والشروق (الجرس والوقت والنغمة لكل واحدة)"))
         Prayer.values().forEach { p ->
             root.addView(
                 buildPrayerCard(p),
@@ -559,7 +559,7 @@ class MainActivity : AppCompatActivity() {
         pendingPrayer = p
         pendingAll = (p == null)
         AlertDialog.Builder(this)
-            .setTitle(if (p == null) "نغمة كل الصلوات" else "نغمة صلاة " + p.ar)
+            .setTitle(if (p == null) "نغمة كل الصلوات" else "نغمة " + p.full)
             .setItems(
                 arrayOf(
                     "اختيار نغمة من نغمات التليفون",
@@ -737,9 +737,9 @@ class MainActivity : AppCompatActivity() {
     private fun updateCountdown() {
         val now = System.currentTimeMillis()
         val next = FajrScheduler.window(now).second
-        nextLabel.text = "باقي على صلاة " + next.prayer.ar
+        nextLabel.text = "باقي على " + next.prayer.full
         countdownText.text = Fmt.hms(next.time.time - now)
-        var line = "الأذان الساعة " + Fmt.time(next.time)
+        var line = next.prayer.timeWord + " الساعة " + Fmt.time(next.time)
         if (!Prefs.prayerEnabled(this, next.prayer)) line += "   •   🔕 جرسها مقفول"
         adhanText.text = line
     }
@@ -752,7 +752,7 @@ class MainActivity : AppCompatActivity() {
         bellText.text = when {
             !on -> "🔕 الجرس متوقف"
             n == null -> "🔔 الجرس شغال بس مفيش صلاة مفعّلة"
-            else -> "🔔 أقرب جرس: صلاة " + n.prayer.ar + " الساعة " + Fmt.time(n.ring)
+            else -> "🔔 أقرب جرس: " + n.prayer.full + " الساعة " + Fmt.time(n.ring)
         }
         toggle.text = if (on) "إيقاف الجرس" else "تشغيل الجرس"
 
@@ -775,13 +775,13 @@ class MainActivity : AppCompatActivity() {
             remindFileTexts[p]?.text =
                 if (Prefs.remindFile(this, p) != null) "صوت التنبيه: ملف مسجّل ✅" else "صوت التنبيه: نطق التليفون"
             vibSwitches[p]?.let {
-                it.text = "📳 اهتزاز مع أذان " + p.ar
+                it.text = "📳 اهتزاز مع جرس " + p.ar
                 it.isChecked = Prefs.prayerVibrate(this, p)
             }
 
             val rm = Prefs.remindMinutes(this, p)
             remindSwitches[p]?.let {
-                it.text = "🔊 تنبيه «اقتربت صلاة " + p.ar + "» قبلها بـ " + rm + " دقيقة"
+                it.text = "🔊 تنبيه «" + p.approachPhrase + "» قبل الموعد بـ " + rm + " دقيقة"
                 it.isChecked = Prefs.remindEnabled(this, p)
             }
             remindTexts[p]?.text = "التنبيه الصوتي قبل الصلاة بـ " + rm + " دقيقة (الساعة " +

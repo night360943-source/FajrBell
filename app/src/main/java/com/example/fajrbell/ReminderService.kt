@@ -42,7 +42,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         }
         val minutes = intent?.getIntExtra("minutes", 15) ?: 15
         val adhan = intent?.getLongExtra("adhan", 0L) ?: 0L
-        message = if (prayer != null) "اقتربت صلاة " + prayer.ar else "اقتربت الصلاة"
+        message = if (prayer != null) prayer.approachPhrase else "اقتربت الصلاة"
 
         // قناة صامتة تماماً: مفيش صوت ولا إشعار ظاهر، النطق هو الصوت الوحيد
         val channelId = "prayer_reminder_quiet"
@@ -59,7 +59,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
         val detail = if (adhan > 0L) {
-            "الأذان الساعة " + Fmt.time(Date(adhan)) + " (بعد " + minutes + " دقيقة)"
+            (prayer?.timeWord ?: "الأذان") + " الساعة " + Fmt.time(Date(adhan)) + " (بعد " + minutes + " دقيقة)"
         } else {
             "تجربة التنبيه"
         }
@@ -118,7 +118,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
             val text = if (adhan > 0L) {
-                "الأذان الساعة " + Fmt.time(Date(adhan)) + " (بعد " + minutes + " دقيقة)"
+                (prayer?.timeWord ?: "الأذان") + " الساعة " + Fmt.time(Date(adhan)) + " (بعد " + minutes + " دقيقة)"
             } else {
                 "تجربة التنبيه"
             }

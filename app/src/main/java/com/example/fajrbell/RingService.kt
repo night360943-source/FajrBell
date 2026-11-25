@@ -52,8 +52,8 @@ class RingService : Service() {
         val isTest = intent?.getBooleanExtra("test", false) ?: false
         val title = when {
             prayer == null -> "تجربة الجرس"
-            isTest -> "تجربة جرس صلاة " + prayer.ar
-            else -> "حان الآن موعد صلاة " + prayer.ar
+            isTest -> "تجربة جرس " + prayer.full
+            else -> "حان الآن موعد " + prayer.full
         }
 
         // نفس الأذان شغال بالفعل: تجاهل التشغيل التاني

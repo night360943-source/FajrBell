@@ -24,7 +24,11 @@ object AdhanAlerts {
                 c, 9, Intent(c, MainActivity::class.java),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
             )
-            val title = if (prayerName != null) "⚠️ أذان $prayerName وقف" else "⚠️ الأذان وقف"
+            val title = when {
+                prayerName == null -> "⚠️ الأذان وقف"
+                prayerName == Prayer.SUNRISE.ar -> "⚠️ جرس الشروق وقف"
+                else -> "⚠️ أذان $prayerName وقف"
+            }
             val body = reason + "\nافتح التطبيق وراجع إعدادات البطارية والتشغيل التلقائي"
             val n = NotificationCompat.Builder(c, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
