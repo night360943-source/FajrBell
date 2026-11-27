@@ -820,7 +820,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun soundName(p: Prayer): String {
-        val s = Prefs.sound(this, p) ?: return "نغمة المنبه الافتراضية"
+        val s = Prefs.sound(this, p)
+            ?: return if (p == Prayer.SUNRISE) "نغمة المنبه الافتراضية" else "أذان التطبيق (الافتراضي)"
         val uri = Uri.parse(s)
         try {
             if (uri.scheme == "content" && uri.authority != "media" &&

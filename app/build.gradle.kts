@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.fajrbell"
         minSdk = 26
         targetSdk = 34
-        versionCode = 24
-        versionName = "v24"
+        versionCode = 25
+        versionName = "v25"
     }
 
     compileOptions {

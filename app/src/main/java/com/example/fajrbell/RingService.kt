@@ -38,6 +38,7 @@ class RingService : Service() {
     private var isTestRun = false
     private var sessionId = 0L
     private var triedFallback = false
+    private var longAudioMs = 0L         // لو الملف طويل (زي الأذان) بيشتغل مرة واحدة لحد ما يخلص
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == "STOP") {
@@ -120,10 +121,18 @@ class RingService : Service() {
         startVibration(prayer)
         startFlipListener()
         handler.removeCallbacksAndMessages(null)
+        val cap = if (longAudioMs > 0L) longAudioMs + 5_000L else Prefs.duration(this) * 1000L
         handler.postDelayed({
             cleanStop = true
             stopSelf()
-        }, Prefs.duration(this) * 1000L)
+        }, cap)
+        if (longAudioMs > 0L) {
+            // الأذان ملف طويل: الاهتزاز أول 30 ثانية بس، والمراقب بيستنى لحد ما الملف يخلص
+            handler.postDelayed({ stopVibration() }, 30_000L)
+            if (!isTest && sessionId != 0L) {
+                AdhanAlerts.scheduleWatchdog(this, sessionId, prayer?.ar, longAudioMs + 20_000L)
+            }
+        }
         return START_NOT_STICKY
     }
 
@@ -159,6 +168,15 @@ class RingService : Service() {
             mp.setDataSource(this, uri)
             mp.isLooping = true
             mp.prepare()
+            // ملف طويل (زي الأذان): يشتغل مرة واحدة لحد ما يخلص. النغمة القصيرة بتتكرر
+            val dur = try { mp.duration } catch (e: Exception) { 0 }
+            if (dur > 30_000) {
+                mp.isLooping = false
+                mp.setOnCompletionListener { onLongAudioFinished() }
+                longAudioMs = dur.toLong()
+            } else {
+                longAudioMs = 0L
+            }
             mp.start()
             return mp
         } catch (e: Exception) {
@@ -175,7 +193,7 @@ class RingService : Service() {
         }
         if (!triedFallback) {
             triedFallback = true
-            handler.post { startSound(null) }
+            handler.post { startSound(null, true) }
         }
     }
 
@@ -192,16 +210,32 @@ class RingService : Service() {
         vibrator = null
     }
 
-    private fun startSound(prayer: Prayer?) {
+    /** الأذان خلص (ملف طويل): وقف طبيعي */
+    private fun onLongAudioFinished() {
+        cleanStop = true
+        stopSelf()
+    }
+
+    private fun startSound(prayer: Prayer?, forceDefault: Boolean = false) {
         player?.release()
         player = null
-        val saved = if (prayer != null) Prefs.sound(this, prayer)?.let { Uri.parse(it) } else null
-        val resId = resources.getIdentifier("bell", "raw", packageName)
-        val raw = if (resId != 0) Uri.parse("android.resource://$packageName/$resId") else null
+        longAudioMs = 0L
+        val saved = if (prayer != null && !forceDefault) {
+            Prefs.sound(this, prayer)?.let { Uri.parse(it) }
+        } else {
+            null
+        }
+        // الأذان المدمج في التطبيق (res/raw/adhan.mp3): للصلوات بس، مش للشروق
+        val adhanId = if (prayer != Prayer.SUNRISE && !forceDefault) {
+            resources.getIdentifier("adhan", "raw", packageName)
+        } else {
+            0
+        }
+        val adhan = if (adhanId != 0) Uri.parse("android.resource://$packageName/$adhanId") else null
         val fallback = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
 
-        // الأولوية: نغمة الصلاة اللي اخترتها > bell.mp3 > نغمة المنبه الافتراضية
-        for (uri in listOfNotNull(saved, raw, fallback)) {
+        // الأولوية: نغمة اخترتها > الأذان المدمج (للصلوات) > نغمة المنبه الافتراضية
+        for (uri in listOfNotNull(saved, adhan, fallback)) {
             try {
                 player = buildPlayer(uri)
                 return
