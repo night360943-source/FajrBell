@@ -7,12 +7,22 @@ android {
     namespace = "com.example.fajrbell"
     compileSdk = 34
 
+    // مفتاح توقيع ثابت: عشان كل نسخة جديدة تتسطّب فوق القديمة من غير ما تمسح البرنامج
+    signingConfigs {
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
-        applicationId = "com.example.fajrbell"
+        applicationId = "com.mawaqeet.alsalah"
         minSdk = 26
         targetSdk = 34
-        versionCode = 25
-        versionName = "v25"
+        versionCode = 26
+        versionName = "v26"
     }
 
     compileOptions {

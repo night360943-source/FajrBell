@@ -48,7 +48,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         val channelId = "prayer_reminder_quiet"
         val nm = getSystemService(NotificationManager::class.java)
         try { nm.deleteNotificationChannel("prayer_reminder") } catch (e: Exception) { }
-        val ch = NotificationChannel(channelId, "تنبيه صوتي قبل الصلاة", NotificationManager.IMPORTANCE_MIN)
+        val ch = NotificationChannel(channelId, "تذكير صوتي قبل الصلاة", NotificationManager.IMPORTANCE_MIN)
         ch.setSound(null, null)
         ch.enableVibration(false)
         ch.setShowBadge(false)
@@ -61,7 +61,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
         val detail = if (adhan > 0L) {
             (prayer?.timeWord ?: "الأذان") + " الساعة " + Fmt.time(Date(adhan)) + " (بعد " + minutes + " دقيقة)"
         } else {
-            "تجربة التنبيه"
+            "تجربة التذكير"
         }
         val notif: Notification = NotificationCompat.Builder(this, channelId)
             .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -120,7 +120,7 @@ class ReminderService : Service(), TextToSpeech.OnInitListener {
             val text = if (adhan > 0L) {
                 (prayer?.timeWord ?: "الأذان") + " الساعة " + Fmt.time(Date(adhan)) + " (بعد " + minutes + " دقيقة)"
             } else {
-                "تجربة التنبيه"
+                "تجربة التذكير"
             }
             val b = NotificationCompat.Builder(this, chId)
                 .setSmallIcon(android.R.drawable.ic_lock_idle_alarm)

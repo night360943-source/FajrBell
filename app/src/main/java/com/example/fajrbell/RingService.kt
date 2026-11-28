@@ -52,8 +52,8 @@ class RingService : Service() {
         }
         val isTest = intent?.getBooleanExtra("test", false) ?: false
         val title = when {
-            prayer == null -> "تجربة الجرس"
-            isTest -> "تجربة جرس " + prayer.full
+            prayer == null -> "تجربة التنبيه"
+            isTest -> "تجربة تنبيه " + prayer.full
             else -> "حان الآن موعد " + prayer.full
         }
 
@@ -69,7 +69,7 @@ class RingService : Service() {
         val channelId = "fajr_bell"
         val nm = getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(
-            NotificationChannel(channelId, "جرس الصلاة", NotificationManager.IMPORTANCE_HIGH)
+            NotificationChannel(channelId, "تنبيه الأذان", NotificationManager.IMPORTANCE_HIGH)
         )
         val stopPi = PendingIntent.getService(
             this, 3, Intent(this, RingService::class.java).setAction("STOP"),

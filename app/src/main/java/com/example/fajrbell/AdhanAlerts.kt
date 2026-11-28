@@ -26,7 +26,7 @@ object AdhanAlerts {
             )
             val title = when {
                 prayerName == null -> "⚠️ الأذان وقف"
-                prayerName == Prayer.SUNRISE.ar -> "⚠️ جرس الشروق وقف"
+                prayerName == Prayer.SUNRISE.ar -> "⚠️ تنبيه الشروق وقف"
                 else -> "⚠️ أذان $prayerName وقف"
             }
             val body = reason + "\nافتح التطبيق وراجع إعدادات البطارية والتشغيل التلقائي"

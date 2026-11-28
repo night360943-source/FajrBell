@@ -24,7 +24,7 @@
 
     <application
         android:name=".FajrApp"
-        android:label="جرس الصلاة"
+        android:label="مواقيت الصلاة"
         android:icon="@drawable/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.AppCompat.DayNight.DarkActionBar">

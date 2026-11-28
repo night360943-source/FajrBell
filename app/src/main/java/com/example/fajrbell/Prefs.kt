@@ -5,8 +5,8 @@ import android.content.Context
 object Prefs {
     private fun sp(c: Context) = c.getSharedPreferences("fajr", Context.MODE_PRIVATE)
 
-    /** التشغيل العام للجرس */
-    fun enabled(c: Context) = sp(c).getBoolean("enabled", false)
+    /** التشغيل العام للتنبيهات (شغال افتراضياً) */
+    fun enabled(c: Context) = sp(c).getBoolean("enabled", true)
     fun setEnabled(c: Context, v: Boolean) = sp(c).edit().putBoolean("enabled", v).apply()
 
     /** تفعيل/إيقاف كل صلاة لوحدها (الكل شغال افتراضياً) */

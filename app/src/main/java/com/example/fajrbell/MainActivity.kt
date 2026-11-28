@@ -23,6 +23,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
@@ -69,6 +70,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
     private lateinit var locText: TextView
+    private lateinit var homePage: ScrollView
+    private lateinit var prayersPage: ScrollView
+    private lateinit var soundPage: ScrollView
+    private lateinit var settingsPage: ScrollView
+    private var currentPage: View? = null
+    private var askedAlarmPerm = false
     private lateinit var bgLocText: TextView
     private lateinit var vibText: TextView
     private lateinit var voiceText: TextView
@@ -157,143 +164,143 @@ class MainActivity : AppCompatActivity() {
             refresh()
         }
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            layoutDirection = View.LAYOUT_DIRECTION_RTL
-            setPadding(40, 48, 40, 48)
+        // ----- مفاتيح مشتركة بين الصفحات -----
+        val autoLocSwitch = SwitchCompat(this).apply {
+            text = "🔄 تحديث الموقع تلقائياً عند فتح التطبيق"
+            textSize = 15f
+            isChecked = Prefs.autoLocation(this@MainActivity)
+            setPadding(0, 8, 0, 8)
+            setOnClickListener { Prefs.setAutoLocation(this@MainActivity, isChecked) }
+        }
+        val bgLocSwitch = SwitchCompat(this).apply {
+            text = "📡 تحديث الموقع تلقائياً في الخلفية (للسفر)"
+            textSize = 15f
+            isChecked = Prefs.bgLocation(this@MainActivity)
+            setPadding(0, 8, 0, 8)
+            setOnClickListener {
+                Prefs.setBgLocation(this@MainActivity, isChecked)
+                if (isChecked) askBackgroundLocation()
+                LocationTracker.start(this@MainActivity)
+                refresh()
+            }
+        }
+        val vibAllSwitch = SwitchCompat(this).apply {
+            text = "📳 اهتزاز مع كل الصلوات"
+            textSize = 17f
+            isChecked = Prefs.vibrate(this@MainActivity)
+            setPadding(0, 16, 0, 16)
+            setOnClickListener {
+                Prefs.setVibrate(this@MainActivity, isChecked)
+                refresh()
+            }
         }
 
-        root.addView(label(12f).apply {
+        // ===== الصفحة الرئيسية: معلومات الصلاة القادمة + 4 أزرار بس =====
+        val homeRoot = newRoot()
+        homeRoot.addView(label(12f).apply {
             text = "الإصدار: " + (try { packageManager.getPackageInfo(packageName, 0).versionName } catch (e: Exception) { "?" })
         })
-
-        // ----- زرار بوصلة القبلة -----
-        root.addView(
-            Button(this).apply {
-                text = "🧭 بوصلة القبلة"
-                textSize = 20f
-                setTextColor(Color.parseColor("#FFD60A"))
-                setBackgroundColor(Color.parseColor("#0B6E4F"))
-                setOnClickListener { startActivity(Intent(this@MainActivity, QiblaActivity::class.java)) }
-            },
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = 16 }
-        )
-
-        // ----- الموقع (المواقيت والقبلة بتتحسب عليه) -----
-        root.addView(locText)
-        root.addView(btn("📍 تحديث الموقع الآن") { detectLocationForTimes(true) })
-        root.addView(
-            SwitchCompat(this).apply {
-                text = "تحديث الموقع تلقائياً عند فتح التطبيق"
-                textSize = 15f
-                isChecked = Prefs.autoLocation(this@MainActivity)
-                setPadding(0, 8, 0, 8)
-                setOnClickListener { Prefs.setAutoLocation(this@MainActivity, isChecked) }
-            }
-        )
-        root.addView(
-            SwitchCompat(this).apply {
-                text = "📡 تحديث الموقع تلقائياً في الخلفية (للسفر)"
-                textSize = 15f
-                isChecked = Prefs.bgLocation(this@MainActivity)
-                setPadding(0, 8, 0, 8)
-                setOnClickListener {
-                    Prefs.setBgLocation(this@MainActivity, isChecked)
-                    if (isChecked) askBackgroundLocation()
-                    LocationTracker.start(this@MainActivity)
-                    refresh()
-                }
-            }
-        )
-        root.addView(bgLocText)
-        root.addView(btn("السماح بالموقع طول الوقت") { askBackgroundLocation() })
-
-        // ----- الصلاة القادمة والوقت المتبقي -----
-        root.addView(nextLabel)
-        root.addView(countdownText)
-        root.addView(adhanText)
-        root.addView(bellText)
-        root.addView(toggle)
-
-        // ----- كل صلاة -----
-        // ----- الاهتزاز -----
-        root.addView(title("📳 الاهتزاز مع الأذان"))
-        root.addView(
-            SwitchCompat(this).apply {
-                text = "اهتزاز مع كل الصلوات"
-                textSize = 17f
-                isChecked = Prefs.vibrate(this@MainActivity)
-                setPadding(0, 16, 0, 16)
-                setOnClickListener {
-                    Prefs.setVibrate(this@MainActivity, isChecked)
-                    refresh()
-                }
-            }
-        )
-        root.addView(vibText)
-        root.addView(btn("تجربة اهتزاز التليفون الآن") { testVibration() })
-
-        // ----- صوت تنبيه "اقتربت صلاة ..." -----
-        root.addView(title("🎙 صوت تنبيه «اقتربت صلاة»"))
-        root.addView(voiceText)
-        root.addView(btn("اختيار صوت التنبيه (رجل / سيدة)") { chooseTtsVoice() })
-        root.addView(btn("🎙 ملف صوت واحد لكل التنبيهات (تسجيل بصوتك مثلاً)") {
-            pendingRemindAll = true
-            remindFilePicker.launch(arrayOf("audio/*"))
+        homeRoot.addView(nextLabel)
+        homeRoot.addView(countdownText)
+        homeRoot.addView(adhanText)
+        homeRoot.addView(bellText)
+        homeRoot.addView(toggle)
+        homeRoot.addView(sectionBtn("🧭", "بوصلة القبلة") {
+            startActivity(Intent(this, QiblaActivity::class.java))
         })
-        root.addView(btn("الرجوع لنطق التليفون لكل التنبيهات") {
-            for (p in Prayer.values()) Prefs.setRemindFile(this, p, null)
-            refresh()
-        })
+        homeRoot.addView(sectionBtn("🕌", "الصلوات والتنبيهات") { showPage(prayersPage, "🕌 الصلوات والتنبيهات") })
+        homeRoot.addView(sectionBtn("🔊", "الصوت والاهتزاز") { showPage(soundPage, "🔊 الصوت والاهتزاز") })
+        homeRoot.addView(sectionBtn("⚙️", "الموقع والأذونات") { showPage(settingsPage, "⚙️ الموقع والأذونات") })
+        homePage = scroll(homeRoot)
 
-        // ----- نغمة كل الصلوات مرة واحدة -----
-        root.addView(title("🔔 نغمة كل الصلوات"))
-        root.addView(allSoundText)
-        root.addView(btn("تغيير نغمة كل الصلوات") { chooseSound(null) })
-
-        root.addView(title("🕌 الصلوات والشروق (الجرس والوقت والنغمة لكل واحدة)"))
-        Prayer.values().forEach { p ->
-            root.addView(
-                buildPrayerCard(p),
-                LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply { topMargin = 24 }
-            )
+        // ===== صفحة: الصلوات والتنبيهات =====
+        prayersPage = subPage("🕌 الصلوات والتنبيهات") { r ->
+            r.addView(label(14f).apply {
+                text = "لكل صلاة: تنبيه الأذان، تذكير قبل الموعد، اهتزاز، ونغمة وتوقيت مستقلين"
+            })
+            Prayer.values().forEach { p ->
+                r.addView(
+                    buildPrayerCard(p),
+                    LinearLayout.LayoutParams(
+                        LinearLayout.LayoutParams.MATCH_PARENT,
+                        LinearLayout.LayoutParams.WRAP_CONTENT
+                    ).apply { topMargin = 24 }
+                )
+            }
         }
 
-        // ----- التاريخ -----
-        root.addView(title("📅 التاريخ (الهجري والميلادي)"))
-        root.addView(dateText)
-        root.addView(stepper(
-            "−1 يوم" to { changeHijri(-1) }, "+1 يوم" to { changeHijri(1) }
-        ))
+        // ===== صفحة: الصوت والاهتزاز =====
+        soundPage = subPage("🔊 الصوت والاهتزاز") { r ->
+            r.addView(title("📳 الاهتزاز مع الأذان"))
+            r.addView(vibAllSwitch)
+            r.addView(vibText)
 
-        // ----- البطارية -----
-        root.addView(title("🔋 عشان الجرس والودجت ما يتوقفوش"))
-        root.addView(batteryText)
-        root.addView(btn("السماح للتطبيق بالعمل في الخلفية") { askBatteryWhitelist() })
-        root.addView(btn("فتح التشغيل التلقائي (Xiaomi)") { openAutostart() })
-        root.addView(btn("فتح توفير البطارية للتطبيق (Xiaomi)") { openXiaomiBattery() })
-        root.addView(keepText)
-        keepButton = btn("") { toggleKeepAlive() }
-        root.addView(keepButton)
-        root.addView(fullScreenText)
-        root.addView(btn("السماح بعرض شاشة الأذان على شاشة القفل") { askFullScreen() })
-        root.addView(btn("فتح أذونات Xiaomi (شاشة القفل والنوافذ المنبثقة)") { openXiaomiPermissions() })
+            r.addView(title("🎵 نغمة التنبيه لكل الصلوات"))
+            r.addView(allSoundText)
+            r.addView(ibtn("🎵", "تغيير نغمة كل الصلوات") { chooseSound(null) })
 
-        // ----- مدة الرنين -----
-        root.addView(title("⏱ مدة الرنين (لكل الصلوات)"))
-        root.addView(durationText)
-        root.addView(stepper(
-            "−30" to { changeDuration(-30) }, "−10" to { changeDuration(-10) },
-            "+10" to { changeDuration(10) }, "+30" to { changeDuration(30) }
-        ))
+            r.addView(title("⏱ مدة التنبيه (لكل الصلوات)"))
+            r.addView(durationText)
+            r.addView(stepper(
+                "−30" to { changeDuration(-30) }, "−10" to { changeDuration(-10) },
+                "+10" to { changeDuration(10) }, "+30" to { changeDuration(30) }
+            ))
 
-        setContentView(ScrollView(this).apply { addView(root) })
+            r.addView(title("🗣 صوت تذكير «اقتربت صلاة»"))
+            r.addView(voiceText)
+            r.addView(ibtn("🗣", "اختيار صوت التذكير (رجل / سيدة)") { chooseTtsVoice() })
+            r.addView(ibtn("🎙", "ملف صوت واحد لكل التذكيرات (تسجيل بصوتك)") {
+                pendingRemindAll = true
+                remindFilePicker.launch(arrayOf("audio/*"))
+            })
+            r.addView(ibtn("📱", "الرجوع لنطق التليفون لكل التذكيرات") {
+                for (p in Prayer.values()) Prefs.setRemindFile(this, p, null)
+                refresh()
+            })
+        }
+
+        // ===== صفحة: الموقع والأذونات =====
+        settingsPage = subPage("⚙️ الموقع والأذونات") { r ->
+            r.addView(title("📍 الموقع"))
+            r.addView(locText)
+            r.addView(ibtn("📍", "تحديث الموقع الآن") { detectLocationForTimes(true) })
+            r.addView(autoLocSwitch)
+            r.addView(bgLocSwitch)
+            r.addView(bgLocText)
+            r.addView(ibtn("🛰️", "السماح بالموقع طول الوقت") { askBackgroundLocation() })
+
+            r.addView(title("📅 التاريخ (الهجري والميلادي)"))
+            r.addView(dateText)
+            r.addView(stepper(
+                "−1 يوم" to { changeHijri(-1) }, "+1 يوم" to { changeHijri(1) }
+            ))
+
+            r.addView(title("🔋 عشان التنبيهات والودجت ما يتوقفوش"))
+            r.addView(batteryText)
+            r.addView(ibtn("🔋", "السماح للتطبيق بالعمل في الخلفية") { askBatteryWhitelist() })
+            r.addView(ibtn("🚀", "فتح التشغيل التلقائي (Xiaomi)") { openAutostart() })
+            r.addView(ibtn("🪫", "فتح توفير البطارية للتطبيق (Xiaomi)") { openXiaomiBattery() })
+            r.addView(keepText)
+            keepButton = ibtn("📌", "") { toggleKeepAlive() }
+            r.addView(keepButton)
+            r.addView(fullScreenText)
+            r.addView(ibtn("🔒", "السماح بعرض شاشة الأذان على شاشة القفل") { askFullScreen() })
+            r.addView(ibtn("🛡️", "فتح أذونات Xiaomi (شاشة القفل والنوافذ المنبثقة)") { openXiaomiPermissions() })
+        }
+
+        // زرار الرجوع في النظام: من الصفحة الفرعية للرئيسية، ومن الرئيسية للخروج
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (currentPage !== homePage) {
+                    showPage(homePage, "🕌 مواقيت الصلاة")
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+
+        showPage(homePage, "🕌 مواقيت الصلاة")
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -312,6 +319,13 @@ class MainActivity : AppCompatActivity() {
         if (PrayerWidgetProvider.hasWidgets(this)) PrayerWidgetProvider.scheduleTick(this)
         if (Prefs.keepAlive(this)) KeepAliveService.start(this)
         if (Prefs.autoLocation(this)) detectLocationForTimes(false)
+        // التنبيهات شغالة افتراضياً: اتأكد إنها متجدولة (ولو الإذن ناقص اطلبه)
+        if (Prefs.enabled(this) && !waitingForPermission) {
+            if (!FajrScheduler.schedule(this) && !askedAlarmPerm) {
+                askedAlarmPerm = true
+                tryEnable()
+            }
+        }
         LocationTracker.start(this)
         handler.post(ticker)
     }
@@ -372,10 +386,10 @@ class MainActivity : AppCompatActivity() {
             "−10" to { changeOffset(p, -10) }, "−1" to { changeOffset(p, -1) },
             "+1" to { changeOffset(p, 1) }, "+10" to { changeOffset(p, 10) }
         ))
-        details.addView(btn("الجرس على الأذان بالظبط") { setOffset(p, 0) })
+        details.addView(ibtn("⏱", "التنبيه على الأذان بالظبط") { setOffset(p, 0) })
         details.addView(soundText)
-        details.addView(btn("تغيير النغمة") { chooseSound(p) })
-        details.addView(btn("تجربة جرس " + p.ar) {
+        details.addView(ibtn("🎵", "تغيير النغمة") { chooseSound(p) })
+        details.addView(ibtn("▶️", "تجربة تنبيه " + p.ar) {
             val i = Intent(this, RingService::class.java)
                 .putExtra("key", p.name)
                 .putExtra("test", true)
@@ -387,19 +401,19 @@ class MainActivity : AppCompatActivity() {
             "−5" to { changeRemind(p, -5) }, "−1" to { changeRemind(p, -1) },
             "+1" to { changeRemind(p, 1) }, "+5" to { changeRemind(p, 5) }
         ))
-        details.addView(btn("تجربة تنبيه " + p.ar) { testReminder(p) })
+        details.addView(ibtn("🗣", "تجربة تذكير " + p.ar) { testReminder(p) })
         details.addView(remindFileText)
-        details.addView(btn("🎙 ملف صوت لتنبيه " + p.ar + " (بدل النطق)") {
+        details.addView(ibtn("🎙", "ملف صوت للتذكير " + p.ar + " (بدل النطق)") {
             pendingRemind = p
             pendingRemindAll = false
             remindFilePicker.launch(arrayOf("audio/*"))
         })
-        details.addView(btn("استخدام نطق التليفون لـ " + p.ar) {
+        details.addView(ibtn("📱", "استخدام نطق التليفون لـ " + p.ar) {
             Prefs.setRemindFile(this, p, null)
             refresh()
         })
 
-        val edit = btn("⚙ تعديل الوقت والنغمة والتنبيه") {
+        val edit = ibtn("⚙️", "تعديل الوقت والنغمة والتذكير") {
             details.visibility = if (details.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
 
@@ -633,7 +647,7 @@ class MainActivity : AppCompatActivity() {
                     )
                 )
                     .putExtra("package_name", packageName)
-                    .putExtra("package_label", "جرس الصلاة")
+                    .putExtra("package_label", "مواقيت الصلاة")
             )
         } catch (_: Exception) {
             openAppDetails()
@@ -740,7 +754,7 @@ class MainActivity : AppCompatActivity() {
         nextLabel.text = "باقي على " + next.prayer.full
         countdownText.text = Fmt.hms(next.time.time - now)
         var line = next.prayer.timeWord + " الساعة " + Fmt.time(next.time)
-        if (!Prefs.prayerEnabled(this, next.prayer)) line += "   •   🔕 جرسها مقفول"
+        if (!Prefs.prayerEnabled(this, next.prayer)) line += "   •   🔕 تنبيهها مقفول"
         adhanText.text = line
     }
 
@@ -750,41 +764,41 @@ class MainActivity : AppCompatActivity() {
 
         val n = FajrScheduler.next(this)
         bellText.text = when {
-            !on -> "🔕 الجرس متوقف"
-            n == null -> "🔔 الجرس شغال بس مفيش صلاة مفعّلة"
-            else -> "🔔 أقرب جرس: " + n.prayer.full + " الساعة " + Fmt.time(n.ring)
+            !on -> "🔕 التنبيهات متوقفة"
+            n == null -> "🔔 التنبيهات شغالة بس مفيش صلاة مفعّلة"
+            else -> "🔔 أقرب تنبيه: " + n.prayer.full + " الساعة " + Fmt.time(n.ring)
         }
-        toggle.text = if (on) "إيقاف الجرس" else "تشغيل الجرس"
+        toggle.text = if (on) "⏸  إيقاف التنبيهات" else "▶️  تشغيل التنبيهات"
 
         val shown = FajrScheduler.displayTimes()
         for ((p, row) in rows) {
             val time = shown.getValue(p)
             val off = Prefs.offset(this, p)
-            var t = p.ar + "   " + Fmt.time(time)
-            if (off != 0) t += "  ←  الجرس " + Fmt.time(Date(time.time + off * 60_000L))
+            var t = "🔔 " + p.ar + "   " + Fmt.time(time)
+            if (off != 0) t += "  ←  التنبيه " + Fmt.time(Date(time.time + off * 60_000L))
             row.sw.text = t
             row.sw.isChecked = Prefs.prayerEnabled(this, p)
 
             row.offsetText.text = when {
-                off == 0 -> "الجرس على الأذان بالظبط"
-                off < 0 -> "الجرس قبل الأذان بـ " + abs(off) + " دقيقة"
-                else -> "الجرس بعد الأذان بـ " + off + " دقيقة"
+                off == 0 -> "التنبيه على الأذان بالظبط"
+                off < 0 -> "التنبيه قبل الأذان بـ " + abs(off) + " دقيقة"
+                else -> "التنبيه بعد الأذان بـ " + off + " دقيقة"
             }
             row.soundText.text = "النغمة: " + soundName(p)
 
             remindFileTexts[p]?.text =
-                if (Prefs.remindFile(this, p) != null) "صوت التنبيه: ملف مسجّل ✅" else "صوت التنبيه: نطق التليفون"
+                if (Prefs.remindFile(this, p) != null) "صوت التذكير: ملف مسجّل ✅" else "صوت التذكير: نطق التليفون"
             vibSwitches[p]?.let {
-                it.text = "📳 اهتزاز مع جرس " + p.ar
+                it.text = "📳 اهتزاز مع تنبيه " + p.ar
                 it.isChecked = Prefs.prayerVibrate(this, p)
             }
 
             val rm = Prefs.remindMinutes(this, p)
             remindSwitches[p]?.let {
-                it.text = "🔊 تنبيه «" + p.approachPhrase + "» قبل الموعد بـ " + rm + " دقيقة"
+                it.text = "🔊 تذكير «" + p.approachPhrase + "» قبل الموعد بـ " + rm + " دقيقة"
                 it.isChecked = Prefs.remindEnabled(this, p)
             }
-            remindTexts[p]?.text = "التنبيه الصوتي قبل الصلاة بـ " + rm + " دقيقة (الساعة " +
+            remindTexts[p]?.text = "التذكير الصوتي قبل الصلاة بـ " + rm + " دقيقة (الساعة " +
                 Fmt.time(Date(time.time - rm * 60_000L)) + ")"
         }
 
@@ -815,7 +829,7 @@ class MainActivity : AppCompatActivity() {
         val ka = Prefs.keepAlive(this)
         keepText.text = if (ka) "✅ التشغيل المستمر شغال (إشعار ثابت بيحافظ على التطبيق حي)"
         else "التشغيل المستمر متوقف"
-        keepButton.text = if (ka) "إيقاف التشغيل المستمر" else "تشغيل التشغيل المستمر (موصى به لـ Xiaomi)"
+        keepButton.text = if (ka) "📌  إيقاف التشغيل المستمر" else "📌  تشغيل التشغيل المستمر (موصى به لـ Xiaomi)"
         PrayerWidgetProvider.refreshAll(this)
     }
 
@@ -841,6 +855,45 @@ class MainActivity : AppCompatActivity() {
         textSize = size
         gravity = Gravity.CENTER
         setPadding(0, 12, 0, 12)
+    }
+
+    /** زرار فيه أيقونة جنب النص */
+    private fun ibtn(icon: String, t: String, onClick: () -> Unit) = btn(icon + "  " + t, onClick)
+
+    /** زرار القسم الكبير في الصفحة الرئيسية */
+    private fun sectionBtn(icon: String, t: String, onClick: () -> Unit) = Button(this).apply {
+        text = icon + "  " + t
+        textSize = 20f
+        setTextColor(Color.parseColor("#FFD60A"))
+        setBackgroundColor(Color.parseColor("#0B6E4F"))
+        setOnClickListener { onClick() }
+        layoutParams = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ).apply { topMargin = 20 }
+    }
+
+    private fun newRoot() = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        layoutDirection = View.LAYOUT_DIRECTION_RTL
+        setPadding(40, 48, 40, 48)
+    }
+
+    private fun scroll(root: LinearLayout) = ScrollView(this).apply { addView(root) }
+
+    /** صفحة فرعية: زرار رجوع + عنوان + المحتوى */
+    private fun subPage(heading: String, build: (LinearLayout) -> Unit): ScrollView {
+        val r = newRoot()
+        r.addView(ibtn("↩️", "رجوع") { showPage(homePage, "🕌 مواقيت الصلاة") })
+        r.addView(title(heading))
+        build(r)
+        return scroll(r)
+    }
+
+    private fun showPage(p: View, heading: String) {
+        currentPage = p
+        title = heading
+        setContentView(p)
     }
 
     private fun title(t: String) = TextView(this).apply {
